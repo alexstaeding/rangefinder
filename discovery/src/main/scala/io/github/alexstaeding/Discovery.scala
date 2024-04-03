@@ -15,24 +15,26 @@ object Discovery extends IOApp {
   private val logger: Logger = org.log4s.getLogger(Discovery.getClass)
   private val clients = mutable.Set[String]()
 
-  private val service = HttpRoutes.of[IO] {
-    case req@POST -> Root / "hello" =>
-      val clientInfo = req.params.get("client-info")
-      if (clientInfo.isEmpty) {
-        BadRequest("Missing client-info\n")
-      } else {
-        logger.info(s"Added client ${clientInfo.get}")
-        clients.add(clientInfo.get)
-        Ok(s"Hello, ${clientInfo.get}\n")
-      }
-    case req@GET -> Root / "get" =>
-      val clientInfo = req.params.get("client-info")
-      if (clientInfo.isEmpty) {
-        BadRequest("Missing client-info\n")
-      } else {
-        Ok(clients.filter(_ != clientInfo.get).mkString(", "))
-      }
-  }.orNotFound
+  private val service = HttpRoutes
+    .of[IO] {
+      case req @ POST -> Root / "hello" =>
+        val clientInfo = req.params.get("client-info")
+        if (clientInfo.isEmpty) {
+          BadRequest("Missing client-info\n")
+        } else {
+          logger.info(s"Added client ${clientInfo.get}")
+          clients.add(clientInfo.get)
+          Ok(s"Hello, ${clientInfo.get}\n")
+        }
+      case req @ GET -> Root / "get" =>
+        val clientInfo = req.params.get("client-info")
+        if (clientInfo.isEmpty) {
+          BadRequest("Missing client-info\n")
+        } else {
+          Ok(clients.filter(_ != clientInfo.get).mkString(", "))
+        }
+    }
+    .orNotFound
 
   def run(args: List[String]): IO[ExitCode] = {
     EmberServerBuilder

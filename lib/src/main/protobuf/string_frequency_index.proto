@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package io.github.alexstaeding.offlinesearch.model;
+
+message StringFrequencyIndex {
+  map<string, Counter> data = 1;
+}
+
+message Counter {
+  int64 pos = 1;
+  int64 neg = 2;
+}

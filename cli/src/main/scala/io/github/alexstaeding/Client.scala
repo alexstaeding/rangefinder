@@ -1,5 +1,3 @@
-package io.github.alexstaeding
-
 import cats.effect.*
 import com.comcast.ip4s.*
 import io.github.alexstaeding.Client.discoveryUri
@@ -22,27 +20,35 @@ object Client extends IOApp {
   val discoveryUri: Uri = uri"http://localhost:8080/hello"
     .withQueryParam("client-info", s"http://localhost:$selfPort")
 
-  private def createService(client: Client[IO]) = HttpRoutes.of[IO] {
-    case POST -> Root / "hello" =>
+  private def createService(client: Client[IO]) = HttpRoutes
+    .of[IO] { case POST -> Root / "hello" =>
       Ok("h")
-  }.orNotFound
+    }
+    .orNotFound
 
   override def run(args: List[String]): IO[ExitCode] = {
-    EmberClientBuilder.default[IO].build.use { client =>
-      client
-        .expect[String](Request[IO](
-          method = Method.POST,
-          uri = discoveryUri,
-        ))
-        .flatMap(IO.println)
-      EmberServerBuilder
-        .default[IO]
-        .withHost(ipv4"0.0.0.0")
-        .withPort(Port.fromInt(selfPort).get)
-        .withHttpApp(createService(client))
-        .build
-        .use(_ => IO.never)
-        .as(ExitCode.Success)
-    }.as(ExitCode.Success)
+    EmberClientBuilder
+      .default[IO]
+      .build
+      .use { client =>
+        client
+          .expect[String](
+            Request[IO](
+              method = Method.POST,
+              uri = discoveryUri
+            )
+          )
+          .flatMap(IO.println)
+
+        EmberServerBuilder
+          .default[IO]
+          .withHost(ipv4"0.0.0.0")
+          .withPort(Port.fromInt(selfPort).get)
+          .withHttpApp(createService(client))
+          .build
+          .use(_ => IO.never)
+          .as(ExitCode.Success)
+      }
+      .as(ExitCode.Success)
   }
 }
