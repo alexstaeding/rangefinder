@@ -1,7 +1,0 @@
-syntax = "proto3";
-
-package io.github.alexstaeding.offlinesearch.model;
-
-message MetaIndexUpdate {
-  
-}

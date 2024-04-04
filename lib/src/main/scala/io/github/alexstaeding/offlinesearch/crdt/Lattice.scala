@@ -1,8 +1,6 @@
 package io.github.alexstaeding.offlinesearch.crdt
 
 import scala.annotation.targetName
-import scala.compiletime.summonAll
-import scala.deriving.Mirror
 
 @FunctionalInterface
 trait Lattice[A] {

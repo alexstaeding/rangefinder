@@ -8,16 +8,12 @@ lazy val lib = (project in file("lib"))
   .settings(
     name := "lib",
     libraryDependencies ++= Seq(
-      "org.http4s" %% "http4s-ember-client" % http4sVersion,
-      "org.http4s" %% "http4s-ember-server" % http4sVersion,
-      "org.http4s" %% "http4s-dsl" % http4sVersion,
-      "ch.qos.logback" % "logback-classic" % "1.2.3"
+      "ch.qos.logback" % "logback-classic" % "1.2.3",
+      // Use the %%% operator instead of %% for Scala.js and Scala Native 
+      "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core"   % "2.28.4",
+      // Use the "provided" scope instead when the "compile-internal" scope is not supported  
+      "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % "2.28.4" % "compile-internal"
     ),
-    Compile / PB.targets := Seq(
-      scalapb.gen(
-        flatPackage = true
-      ) -> (Compile / sourceManaged).value / "scalapb"
-    )
   )
 
 lazy val discovery = (project in file("discovery"))

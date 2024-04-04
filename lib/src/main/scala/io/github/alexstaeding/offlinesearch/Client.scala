@@ -1,13 +1,12 @@
 package io.github.alexstaeding.offlinesearch
 
 import scala.reflect.Selectable.reflectiveSelectable
-import offlinesearch.network.Network
 import scala.collection.mutable.ArrayDeque
-import io.github.alexstaeding.crdt.IndexGroup
-import offlinesearch.Peer
+import io.github.alexstaeding.offlinesearch.network.Network
+import io.github.alexstaeding.offlinesearch.crdt.Counter
 
-class Client(env: {
-  val network: Network
+class Client[T](env: {
+  val network: Network[T]
 }) {
 
   var indexGroups = new ArrayDeque[IndexGroup]

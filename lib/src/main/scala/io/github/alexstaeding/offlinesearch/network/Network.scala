@@ -1,6 +1,5 @@
 package io.github.alexstaeding.offlinesearch.network
 
-import io.github.alexstaeding.offlinesearch.message.Index
 import scalapb.GeneratedMessageCompanion
 import scalapb.GeneratedMessage
 

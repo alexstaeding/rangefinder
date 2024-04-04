@@ -1,7 +1,7 @@
 package io.github.alexstaeding.offlinesearch.network
 
-import io.github.alexstaeding.crdt.MetaIndex
-import io.github.alexstaeding.crdt.IndexGroup
+import io.github.alexstaeding.offlinesearch.crdt.MetaIndex
+import io.github.alexstaeding.offlinesearch.crdt.IndexGroup
 
 /**
   * T = the indexed type

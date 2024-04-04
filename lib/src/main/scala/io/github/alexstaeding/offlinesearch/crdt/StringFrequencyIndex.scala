@@ -1,9 +1,8 @@
 package io.github.alexstaeding.offlinesearch.crdt
 
-import io.github.alexstaeding.offlinesearch.model.StringFrequencyIndex
-import io.github.alexstaeding.offlinesearch.model.Counter
+case class StringFrequencyIndex(data: Map[String, Counter] = Map.empty)
 
-object StringFrequencyIndexActions {
+object StringFrequencyIndex {
 
   val zero = StringFrequencyIndex()
 
@@ -11,7 +10,7 @@ object StringFrequencyIndexActions {
 
   given lattice: Lattice[StringFrequencyIndex] = {
     (left: StringFrequencyIndex, right: StringFrequencyIndex) =>
-      import CounterActions.lattice
+      import Counter.lattice
       StringFrequencyIndex(Lattice.mapLattice.merge(left.data, right.data))
   }
 
