@@ -1,6 +1,6 @@
 package io.github.alexstaeding.offlinesearch.crdt
 
-case class StringFrequencyIndex(data: Map[String, Counter] = Map.empty)
+case class StringFrequencyIndex(data: Map[String, ReplicatedLong] = Map.empty)
 
 object StringFrequencyIndex {
 
@@ -10,7 +10,7 @@ object StringFrequencyIndex {
 
   given lattice: Lattice[StringFrequencyIndex] = {
     (left: StringFrequencyIndex, right: StringFrequencyIndex) =>
-      import Counter.lattice
+      import ReplicatedLong.lattice
       StringFrequencyIndex(Lattice.mapLattice.merge(left.data, right.data))
   }
 
@@ -22,7 +22,7 @@ object StringFrequencyIndex {
       .groupBy(identity)
       .view
       .mapValues(_.length)
-      .mapValues(Counter(_, 0))
+      .mapValues(ReplicatedLong(_, 0))
       .toMap
 
       StringFrequencyIndex(data)
