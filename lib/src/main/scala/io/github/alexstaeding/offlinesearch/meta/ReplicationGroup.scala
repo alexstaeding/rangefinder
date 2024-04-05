@@ -1,10 +1,9 @@
 package io.github.alexstaeding.offlinesearch.meta
 
-import io.github.alexstaeding.offlinesearch.NodeId
-import io.github.alexstaeding.offlinesearch.crdt.ReplicatedBoolean
+import io.github.alexstaeding.offlinesearch.crdt.{NodeScoped, ReplicatedBoolean}
 
 case class ReplicationGroup[T](
-    membership: Map[NodeId, ReplicatedBoolean],
+    membership: NodeScoped[ReplicatedBoolean],
 )
 
 object ReplicationGroup {
