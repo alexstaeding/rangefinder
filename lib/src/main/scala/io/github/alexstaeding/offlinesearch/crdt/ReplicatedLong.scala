@@ -3,7 +3,7 @@ package io.github.alexstaeding.offlinesearch.crdt
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 
-import scala.math.*
+import scala.math.max
 
 case class ReplicatedLong(pos: Long, neg: Long)
 
@@ -16,9 +16,9 @@ object ReplicatedLong {
 
   given codec: JsonValueCodec[ReplicatedLong] = JsonCodecMaker.make
 
-  given Conversion[ReplicatedLong, Long] = { _.value }
+  given toLong: Conversion[ReplicatedLong, Long] = { _.value }
 
-  extension [C <: ReplicatedLong](container: C) {
+  extension (container: ReplicatedLong) {
     def value: Long = container.pos - container.neg
     def add(amount: Long): ReplicatedLong = {
       if (amount > 0) {
