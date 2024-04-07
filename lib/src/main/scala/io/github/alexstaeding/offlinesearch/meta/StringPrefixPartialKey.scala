@@ -6,3 +6,8 @@ object StringPrefixPartialKeyActions extends PartialKeyActions[String] {
       search.startsWith(partialKey.value)
   }
 }
+
+class StringPrefixPartialKeyRing(
+    override val root: PartialKey[String],
+    override val degree: Int,
+) extends PartialKeyRing[String]

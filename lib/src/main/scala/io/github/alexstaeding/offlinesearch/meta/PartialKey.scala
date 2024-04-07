@@ -8,5 +8,6 @@ case class PartialKey[T](value: T)
 trait PartialKeyActions[T] {
   extension (partialKey: PartialKey[T]) {
     def matches(search: T): Boolean
+    def ring(degree: Int): PartialKeyRing[T]
   }
 }
