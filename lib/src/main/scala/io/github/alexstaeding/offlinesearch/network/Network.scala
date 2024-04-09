@@ -1,7 +1,10 @@
 package io.github.alexstaeding.offlinesearch.network
 
-// TODO: Make generic for T = search type
-trait Network[T, P] {
+import java.net.InetAddress
+import scala.concurrent.Future
 
-  def send(peer: Int): Unit
+// TODO: Make generic for T = search type
+trait Network {
+
+
 }
