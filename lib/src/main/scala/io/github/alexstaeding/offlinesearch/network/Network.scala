@@ -5,6 +5,6 @@ import scala.concurrent.Future
 
 // TODO: Make generic for T = search type
 trait Network {
-
-
+  
+  def send(to: InetAddress, data: String): Future[Option[String]]
 }

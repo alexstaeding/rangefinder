@@ -2,8 +2,9 @@ package io.github.alexstaeding.offlinesearch.network
 
 import com.sun.net.httpserver.HttpServer
 
-import java.net.http.HttpClient
-import java.net.InetSocketAddress
+import java.net.http.{HttpClient, HttpRequest}
+import java.net.{InetAddress, InetSocketAddress, URI}
+import scala.concurrent.Future
 
 class HttpNetwork(bindAddress: InetSocketAddress) extends Network {
 
@@ -14,7 +15,6 @@ class HttpNetwork(bindAddress: InetSocketAddress) extends Network {
     server.bind(bindAddress, 0)
   }
 
-  override def send(peer: Int): Unit = {
-    
+  override def send(to: InetAddress, data: String): Future[Option[String]] = {
   }
 }
