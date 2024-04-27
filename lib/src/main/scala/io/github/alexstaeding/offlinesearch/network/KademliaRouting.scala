@@ -79,14 +79,14 @@ class KademliaRouting[V](
     val distance = distanceLeadingZeros(targetId)
     val bucket = getKBucket(distance)
     if (bucket.size >= concurrency) {
-      bucket.values.toList
+      bucket.nodes.to(LazyList)
         .sortBy(_._1)(using NodeId.DistanceOrdering(targetId))
         .map(_._2)
         .take(concurrency)
     } else {
       // TODO: Optimize by iteratively looking at buckets, starting with the closest
-      (homeBucket +: buckets.toSeq)
-        .flatMap(_.values.toList)
+      (homeBucket +: buckets.to(LazyList))
+        .flatMap(_.nodes.toSeq)
         .sortBy(_._1)(using NodeId.DistanceOrdering(targetId))
         .map(_._2)
         .take(concurrency)
