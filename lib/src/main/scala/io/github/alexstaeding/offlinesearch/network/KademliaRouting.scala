@@ -102,7 +102,10 @@ class KademliaRouting[V](
     def hasSpace: Boolean = !isFull
   }
 
-  override def ping(id: NodeId): Future[Unit] = {}
+  override def ping(targetId: NodeId): Future[Boolean] = {
+    val event = PingEvent(targetId)
+    val closest = getClosest(targetId)
+  }
 
   override def store(id: NodeId, value: V): Future[Boolean] = ???
 
