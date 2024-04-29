@@ -11,7 +11,7 @@ import scala.reflect.Selectable.reflectiveSelectable
 
 class Client[T, P](
     env: {
-      val network: Network[T, P]
+      val network: Network
     },
     val peers: collection.Seq[P],
 ) {
@@ -22,6 +22,6 @@ class Client[T, P](
 
   def discoverPeers(): Unit = {
     writeToString[ReplicatedLong](ReplicatedLong(2,3))
-    env.network.send(2)
+//    env.network.send(2)
   }
 }

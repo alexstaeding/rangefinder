@@ -1,5 +1,7 @@
 package io.github.alexstaeding.offlinesearch.network
 
+import io.github.alexstaeding.offlinesearch.network.event.{PingEvent, RequestEvent}
+
 import java.net.InetAddress
 import java.util
 import java.util.UUID
@@ -25,16 +27,16 @@ class KademliaRouting[V](
     */
   private val homeBucket: KBucket = new KBucket
 
-  private val openRequests: mutable.Map[UUID, OutgoingRequest] = new mutable.HashMap[UUID, OutgoingRequest]
+  private val openRequests: mutable.Map[UUID, RequestEvent] = new mutable.HashMap[UUID, RequestEvent]
 
-  private def createRequest[N <: OutgoingRequest](factory: NetworkEvent.Factory[N], targetId: NodeId): N = {
+  private def createRequest[N <: RequestEvent](factory: RequestEvent.SimpleFactory[N], targetId: NodeId): N = {
     val id = UUID.randomUUID()
     val request = factory.create(id, targetId)
     openRequests.put(id, request)
     request
   }
   
-  private def createRequestFuture[N <: OutgoingRequest](): Unit = {
+  private def createRequestFuture[N <: RequestEvent](): Unit = {
     
   }
 
@@ -118,6 +120,8 @@ class KademliaRouting[V](
     def isFull: Boolean = size >= kMaxSize
     def hasSpace: Boolean = !isFull
   }
+  
+  
 
   override def ping(targetId: NodeId): Future[Boolean] = {
     getLocalValue(targetId) match
