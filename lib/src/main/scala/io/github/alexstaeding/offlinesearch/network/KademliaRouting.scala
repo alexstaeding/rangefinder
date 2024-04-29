@@ -2,6 +2,8 @@ package io.github.alexstaeding.offlinesearch.network
 
 import java.net.InetAddress
 import java.util
+import java.util.UUID
+import java.util.concurrent.Executors
 import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.concurrent.Future
@@ -23,8 +25,20 @@ class KademliaRouting[V](
     */
   private val homeBucket: KBucket = new KBucket
 
+  private val openRequests: mutable.Map[UUID, OutgoingRequest] = new mutable.HashMap[UUID, OutgoingRequest]
+
+  private def createRequest[N <: OutgoingRequest](factory: NetworkEvent.Factory[N], targetId: NodeId): N = {
+    val id = UUID.randomUUID()
+    val request = factory.create(id, targetId)
+    openRequests.put(id, request)
+    request
+  }
+  
+  private def createRequestFuture[N <: OutgoingRequest](): Unit = {
+    
+  }
+
   private def distanceLeadingZeros(id: NodeId): Int = {
-    import NodeId.xor
     val distance = localNodeId.xor(id)
     val firstByte = distance.bytes.indexWhere(_ != 0)
     val bitPrefix = Integer.numberOfLeadingZeros(distance.bytes(firstByte)) - 24
@@ -79,7 +93,8 @@ class KademliaRouting[V](
     val distance = distanceLeadingZeros(targetId)
     val bucket = getKBucket(distance)
     if (bucket.size >= concurrency) {
-      bucket.nodes.to(LazyList)
+      bucket.nodes
+        .to(LazyList)
         .sortBy(_._1)(using NodeId.DistanceOrdering(targetId))
         .map(_._2)
         .take(concurrency)
@@ -93,6 +108,8 @@ class KademliaRouting[V](
     }
   }
 
+  private def getLocalValue(targetId: NodeId): Option[V] = getKBucket(distanceLeadingZeros(targetId)).values.get(targetId)
+
   private class KBucket {
     val nodes: mutable.Map[NodeId, NodeInfo] = new mutable.HashMap[NodeId, NodeInfo]()
     val values: mutable.Map[NodeId, V] = new mutable.HashMap[NodeId, V]()
@@ -103,13 +120,23 @@ class KademliaRouting[V](
   }
 
   override def ping(targetId: NodeId): Future[Boolean] = {
-    val event = PingEvent(targetId)
-    val closest = getClosest(targetId)
+    getLocalValue(targetId) match
+      case Some(_) => return Future.successful(true)
+      case None    =>
+
+    val request = createRequest(PingEvent, targetId)
+
+//    val event = PingEvent(targetId)
+//    val closest = getClosest(targetId)
   }
 
-  override def store(id: NodeId, value: V): Future[Boolean] = ???
+  override def store(targetId: NodeId, value: V): Future[Boolean] = ???
 
-  override def findNode(id: NodeId): Future[NodeInfo] = ???
+  override def findNode(targetId: NodeId): Future[NodeInfo] = ???
 
-  override def findValue(id: NodeId): Future[V] = ???
+  override def findValue(targetId: NodeId): Future[V] = {
+    getLocalValue(targetId) match
+      case Some(value) => Future.successful(value)
+      case None        => ???
+  }
 }

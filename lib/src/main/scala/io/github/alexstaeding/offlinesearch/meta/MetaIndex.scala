@@ -27,8 +27,3 @@ extension [T](metaIndex: MetaIndex[T])(using PartialKeyActions[T]) {
     metaIndex.data.values.flatMap(_.value).filter(_.matches(search))
   }
 }
-
-def foo(x: MetaIndex[String]): Unit = {
-  import MetaIndex.codec
-
-}

@@ -6,11 +6,11 @@ import scala.concurrent.Future
 
 trait Routing[V] {
 
-  def ping(id: NodeId): Future[Boolean]
+  def ping(targetId: NodeId): Future[Boolean]
 
-  def store(id: NodeId, value: V): Future[Boolean]
+  def store(targetId: NodeId, value: V): Future[Boolean]
 
-  def findNode(id: NodeId): Future[NodeInfo]
+  def findNode(targetId: NodeId): Future[NodeInfo]
 
-  def findValue(id: NodeId): Future[V]
+  def findValue(targetId: NodeId): Future[V]
 }
