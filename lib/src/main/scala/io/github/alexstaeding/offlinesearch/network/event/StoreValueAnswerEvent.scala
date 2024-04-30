@@ -2,7 +2,9 @@ package io.github.alexstaeding.offlinesearch.network.event
 
 import java.util.UUID
 
-case class StoreValueAnswerEvent(override val id: UUID) extends AnswerEvent
+case class StoreValueAnswerEvent(override val id: UUID) extends AnswerEvent {
+  
+}
 
 object StoreValueAnswerEvent extends AnswerEvent.SimpleFactory[StoreValueAnswerEvent] {
   override val name: String = "store-value-answer"

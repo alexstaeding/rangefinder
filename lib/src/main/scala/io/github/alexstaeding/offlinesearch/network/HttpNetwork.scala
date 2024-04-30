@@ -103,6 +103,7 @@ class HttpNetwork[V](bindAddress: InetSocketAddress)(using codec: JsonValueCodec
     override def apply(response: HttpResponse[String]): AnswerEvent = response match
       case x if x.statusCode() == 200 => readFromString(response.body())(using summon[AnswerEvent.SimpleFactory[A]].codec)
       case x if x.statusCode() == 301 => readFromString(response.body())(using RedirectEvent.codec)
+      case x if x.statusCode() == 404 => readFromString(response.body())(using NotFoundEvent.codec)
       case x                          => throw IllegalStateException(s"Status code: ${x.statusCode()}")
   }
 
@@ -111,6 +112,7 @@ class HttpNetwork[V](bindAddress: InetSocketAddress)(using codec: JsonValueCodec
     override def apply(response: HttpResponse[String]): AnswerEvent = response match
       case x if x.statusCode() == 200 => readFromString(response.body())(using summon[AnswerEvent.ParameterizedFactory[A]].codec)
       case x if x.statusCode() == 301 => readFromString(response.body())(using RedirectEvent.codec)
+      case x if x.statusCode() == 404 => readFromString(response.body())(using NotFoundEvent.codec)
       case x                          => throw IllegalStateException(s"Status code: ${x.statusCode()}")
   }
 

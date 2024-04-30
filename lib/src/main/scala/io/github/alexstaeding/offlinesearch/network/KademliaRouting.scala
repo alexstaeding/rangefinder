@@ -1,6 +1,6 @@
 package io.github.alexstaeding.offlinesearch.network
 
-import io.github.alexstaeding.offlinesearch.network.event.{PingEvent, RequestEvent}
+import io.github.alexstaeding.offlinesearch.network.event.*
 
 import java.net.InetAddress
 import java.util
@@ -8,7 +8,9 @@ import java.util.UUID
 import java.util.concurrent.Executors
 import scala.annotation.tailrec
 import scala.collection.mutable
-import scala.concurrent.Future
+import scala.concurrent.duration.DurationInt
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
+import scala.reflect.Selectable.reflectiveSelectable
 
 class KademliaRouting[V](
     private val idSpace: NodeIdSpace,
@@ -17,9 +19,11 @@ class KademliaRouting[V](
     private val concurrency: Int = 3, // Number of concurrent searches
 )(using
     private val env: {
-      val network: Network
+      val network: Network[V]
     },
 ) extends Routing[V] {
+
+  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 
   private val buckets: mutable.Buffer[KBucket] = new mutable.ArrayDeque[KBucket]
 
@@ -29,16 +33,14 @@ class KademliaRouting[V](
 
   private val openRequests: mutable.Map[UUID, RequestEvent] = new mutable.HashMap[UUID, RequestEvent]
 
-  private def createRequest[N <: RequestEvent](factory: RequestEvent.SimpleFactory[N], targetId: NodeId): N = {
+  private def createRequest[N <: RequestEvent: RequestEvent.SimpleFactory](targetId: NodeId): N = {
     val id = UUID.randomUUID()
-    val request = factory.create(id, targetId)
+    val request = summon[RequestEvent.SimpleFactory[N]].create(id, targetId)
     openRequests.put(id, request)
     request
   }
-  
-  private def createRequestFuture[N <: RequestEvent](): Unit = {
-    
-  }
+
+  private def createRequestFuture[N <: RequestEvent](): Unit = {}
 
   private def distanceLeadingZeros(id: NodeId): Int = {
     val distance = localNodeId.xor(id)
@@ -112,6 +114,8 @@ class KademliaRouting[V](
 
   private def getLocalValue(targetId: NodeId): Option[V] = getKBucket(distanceLeadingZeros(targetId)).values.get(targetId)
 
+  private def getLocalNode(targetId: NodeId): Option[NodeInfo] = getKBucket(distanceLeadingZeros(targetId)).nodes.get(targetId)
+
   private class KBucket {
     val nodes: mutable.Map[NodeId, NodeInfo] = new mutable.HashMap[NodeId, NodeInfo]()
     val values: mutable.Map[NodeId, V] = new mutable.HashMap[NodeId, V]()
@@ -120,18 +124,34 @@ class KademliaRouting[V](
     def isFull: Boolean = size >= kMaxSize
     def hasSpace: Boolean = !isFull
   }
-  
-  
+
+  @tailrec
+  private def pingRemote(nextHop: InetAddress, targetId: NodeId): Future[Boolean] = {
+    implicit val x: PingEvent.type = PingEvent
+    val request = createRequest(targetId)
+    Await.result(env.network.send(nextHop, request), 0.nanos) match
+      case PingAnswerEvent(id) =>
+        if (id != targetId) throw IllegalStateException(s"Received ping answer for incorrect id $id instead of $targetId")
+        Future.successful(true)
+      case NotFoundEvent(id) =>
+        if (id != targetId) throw IllegalStateException(s"Received not found for incorrect id $id instead of $targetId")
+        Future.successful(false)
+      case RedirectEvent(id, closerTargetInfo) =>
+        if (id != targetId) throw IllegalStateException(s"Received redirect for incorrect id $id instead of $targetId")
+        // TODO: Save id?
+        pingRemote(closerTargetInfo.ip, targetId)
+  }
 
   override def ping(targetId: NodeId): Future[Boolean] = {
     getLocalValue(targetId) match
-      case Some(_) => return Future.successful(true)
-      case None    =>
-
-    val request = createRequest(PingEvent, targetId)
-
-//    val event = PingEvent(targetId)
-//    val closest = getClosest(targetId)
+      case Some(_) => Future.successful(true)
+      case _ =>
+        getLocalNode(targetId) match
+          case Some(node) => pingRemote(node.ip, targetId)
+          case _ =>
+            Future
+              .find(getClosest(targetId).map { case NodeInfo(_, ip) => pingRemote(ip, targetId) })(identity)
+              .map(_.getOrElse(false))
   }
 
   override def store(targetId: NodeId, value: V): Future[Boolean] = ???

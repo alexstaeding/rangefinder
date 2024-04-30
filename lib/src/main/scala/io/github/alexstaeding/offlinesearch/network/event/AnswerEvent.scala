@@ -12,7 +12,7 @@ trait AnswerEvent extends NetworkEvent {
 
 object AnswerEvent {
   trait SimpleFactory[N <: AnswerEvent] extends NetworkEvent.SimpleFactory[N] {
-    def create(id: UUID): N
+    def create(id: UUID, found: Boolean): N
   }
 
   trait ParameterizedFactory[N[_] <: AnswerEvent] extends NetworkEvent.ParameterizedFactory[N] {

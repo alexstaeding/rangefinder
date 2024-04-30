@@ -4,9 +4,11 @@ import io.github.alexstaeding.offlinesearch.network.NodeId
 
 import java.util.UUID
 
-case class PingAnswerEvent(override val id: UUID) extends AnswerEvent
+case class PingAnswerEvent(override val id: UUID) extends AnswerEvent {
+  override val responseCode: Int = 200
+}
 
 object PingAnswerEvent extends AnswerEvent.SimpleFactory[PingAnswerEvent] {
   override val name: String = "ping-answer"
-  override def create(id: UUID, targetId: NodeId): PingAnswerEvent = new PingAnswerEvent(id)
+  override def create(id: UUID): PingAnswerEvent = new PingAnswerEvent(id)
 }
