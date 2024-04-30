@@ -9,11 +9,15 @@ trait RequestEvent extends NetworkEvent {
 }
 
 object RequestEvent {
-  trait SimpleFactory[N <: NetworkEvent] extends NetworkEvent.SimpleFactory[N] {
+  trait Factory extends NetworkEvent.Factory {
+    val answerName: String
+  }
+
+  trait SimpleFactory[N <: NetworkEvent] extends NetworkEvent.SimpleFactory[N], Factory {
     def create(id: UUID, targetId: NodeId): N
   }
 
-  trait ParameterizedFactory[N[_] <: NetworkEvent] extends NetworkEvent.ParameterizedFactory[N] {
+  trait ParameterizedFactory[N[_] <: NetworkEvent] extends NetworkEvent.ParameterizedFactory[N], Factory {
     def create[V](id: UUID, targetId: NodeId, value: Option[V]): N[V]
   }
 }

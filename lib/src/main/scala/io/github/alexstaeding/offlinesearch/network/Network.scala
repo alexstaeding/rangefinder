@@ -8,6 +8,8 @@ import scala.concurrent.Future
 trait Network[V] {
 
   def receive(): Future[EventInterceptor[V]]
-  
-  def send(nextHop: InetAddress, event: RequestEvent): Future[AnswerEvent]
+
+  def send[R <: RequestEvent: RequestEvent.SimpleFactory](nextHop: InetAddress, event: R): Future[AnswerEvent]
+
+  def send[R[_] <: RequestEvent: RequestEvent.ParameterizedFactory](nextHop: InetAddress, event: R[V]): Future[AnswerEvent]
 }

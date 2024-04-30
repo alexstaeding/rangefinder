@@ -8,5 +8,6 @@ case class PingEvent(override val id: UUID, override val targetId: NodeId) exten
 
 object PingEvent extends RequestEvent.SimpleFactory[PingEvent] {
   override val name: String = "ping"
+  override val answerName: String = "ping-answer"
   override def create(id: UUID, targetId: NodeId): PingEvent = new PingEvent(id, targetId)
 }

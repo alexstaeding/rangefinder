@@ -4,9 +4,9 @@ import io.github.alexstaeding.offlinesearch.network.NodeId
 
 import java.util.UUID
 
-case class FindValueAnswerEvent[V](override val id: UUID, override val targetId: NodeId, value: Option[V]) extends RequestEvent
+case class FindValueAnswerEvent[V](override val id: UUID, override val targetId: NodeId, value: Option[V]) extends AnswerEvent
 
-object FindValueAnswerEvent extends RequestEvent.ParameterizedFactory[FindValueAnswerEvent] {
+object FindValueAnswerEvent extends AnswerEvent.ParameterizedFactory[FindValueAnswerEvent] {
   override val name: String = "find-value-answer"
   override def create[V](id: UUID, targetId: NodeId, value: Option[V]): FindValueAnswerEvent[V] =
     new FindValueAnswerEvent[V](id, targetId, value)
