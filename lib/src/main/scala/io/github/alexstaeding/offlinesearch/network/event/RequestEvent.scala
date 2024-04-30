@@ -9,8 +9,6 @@ trait RequestEvent extends NetworkEvent {
 }
 
 object RequestEvent {
-  val ALL: Seq[NetworkEvent.Factory] = Seq(PingEvent, StoreValueEvent, FindNodeEvent, FindValueEvent)
-
   trait SimpleFactory[N <: NetworkEvent] extends NetworkEvent.SimpleFactory[N] {
     def create(id: UUID, targetId: NodeId): N
   }

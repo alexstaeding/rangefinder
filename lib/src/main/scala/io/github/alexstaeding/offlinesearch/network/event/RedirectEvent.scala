@@ -8,6 +8,5 @@ case class RedirectEvent(override val id: UUID, closerTargetId: NodeId) extends 
 
 object RedirectEvent extends AnswerEvent.SimpleFactory[RedirectEvent] {
   override val name: String = "redirect"
-  override def create(id: UUID, targetId: NodeId): RedirectEvent =
-    new RedirectEvent(id, targetId)
+  override def create(id: UUID, targetId: NodeId): RedirectEvent = new RedirectEvent(id, targetId)
 }

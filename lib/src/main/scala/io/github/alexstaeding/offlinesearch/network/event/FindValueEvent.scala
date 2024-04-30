@@ -8,6 +8,5 @@ case class FindValueEvent(override val id: UUID, override val targetId: NodeId) 
 
 object FindValueEvent extends RequestEvent.SimpleFactory[FindValueEvent] {
   override val name: String = "find-value"
-  override def create(id: UUID, targetId: NodeId): FindValueEvent =
-    new FindValueEvent(id, targetId)
+  override def create(id: UUID, targetId: NodeId): FindValueEvent = new FindValueEvent(id, targetId)
 }

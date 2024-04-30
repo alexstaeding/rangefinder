@@ -6,7 +6,9 @@ import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 import java.util.UUID
 
 // TODO: signing?
-trait AnswerEvent extends NetworkEvent
+trait AnswerEvent extends NetworkEvent {
+  val responseCode: Int // TODO: Do this better
+}
 
 object AnswerEvent {
   trait SimpleFactory[N <: AnswerEvent] extends NetworkEvent.SimpleFactory[N] {

@@ -8,6 +8,5 @@ case class StoreValueEvent[V](override val id: UUID, override val targetId: Node
 
 object StoreValueEvent extends RequestEvent.ParameterizedFactory[StoreValueEvent] {
   override val name: String = "store-value"
-  override def create[V](id: UUID, targetId: NodeId, value: V): StoreValueEvent[V] =
-    new StoreValueEvent[V](id, targetId, value)
+  override def create[V](id: UUID, targetId: NodeId, value: V): StoreValueEvent[V] = new StoreValueEvent[V](id, targetId, value)
 }

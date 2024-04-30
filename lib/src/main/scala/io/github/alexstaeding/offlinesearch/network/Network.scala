@@ -1,13 +1,13 @@
 package io.github.alexstaeding.offlinesearch.network
 
-import io.github.alexstaeding.offlinesearch.network.event.{AnswerEvent, RequestEvent}
+import io.github.alexstaeding.offlinesearch.network.event.{AnswerEvent, EventInterceptor, RequestEvent}
 
 import java.net.InetAddress
 import scala.concurrent.Future
 
-trait Network {
+trait Network[V] {
 
-  def receive(): Future[RequestEvent]
-
-  def send(nextHop: InetAddress, event: AnswerEvent): Future[Boolean]
+  def receive(): Future[EventInterceptor[V]]
+  
+  def send(nextHop: InetAddress, event: RequestEvent): Future[AnswerEvent]
 }

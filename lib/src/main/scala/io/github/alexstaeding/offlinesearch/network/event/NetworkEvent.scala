@@ -5,6 +5,7 @@ import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 import io.github.alexstaeding.offlinesearch.network.NodeId
 
 import java.util.UUID
+import scala.reflect.{ClassTag, classTag}
 
 trait NetworkEvent {
   val id: UUID
