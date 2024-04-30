@@ -4,13 +4,16 @@ import io.github.alexstaeding.offlinesearch.network.NodeId
 
 import java.util.UUID
 
-trait RequestEvent extends NetworkEvent {
+trait RequestEvent[V] extends NetworkEvent[V] {
   val targetId: NodeId
 }
 
 object RequestEvent {
-  trait Factory extends NetworkEvent.Factory {
+  trait Factory[R <: RequestEvent[V], V] extends NetworkEvent.Factory[R, V] {
     val answerName: String
+  }
+  trait SomeFactory[R <: RequestEvent[V], V] extends NetworkEvent.Factory[R, V], Factory[R, V] {
+    
   }
 
   trait SimpleFactory[N <: NetworkEvent] extends NetworkEvent.SimpleFactory[N], Factory {

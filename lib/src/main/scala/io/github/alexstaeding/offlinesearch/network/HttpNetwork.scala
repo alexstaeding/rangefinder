@@ -45,7 +45,7 @@ class HttpNetwork[V](bindAddress: InetSocketAddress)(using codec: JsonValueCodec
   private def createContext[R[_] <: RequestEvent: RequestEvent.ParameterizedFactory](server: HttpServer): Unit =
     server.createContext(s"/${summon[NetworkEvent.Factory].name}", new ParameterizedReceiveHandler[R])
 
-  private def createSendHandler[A <: AnswerEvent: AnswerEvent.SimpleFactory]: (String, SimpleSendHandler[A]) =
+  private def createSendHandler[A <: AnswerEvent: AnswerEvent.Factory]: (String, SimpleSendHandler[A]) =
     (summon[NetworkEvent.Factory].name, new SimpleSendHandler)
 
   private def createSendHandler[A[_] <: AnswerEvent: AnswerEvent.ParameterizedFactory]: (String, ParameterizedSendHandler[A]) =
@@ -85,9 +85,9 @@ class HttpNetwork[V](bindAddress: InetSocketAddress)(using codec: JsonValueCodec
 
     private def checkPromise(): Unit = if (promise.isCompleted) throw IllegalStateException("Already answered")
 
-    override def answer[A <: AnswerEvent: AnswerEvent.SimpleFactory](event: A): Unit = {
+    override def answer[A <: AnswerEvent: AnswerEvent.Factory](event: A): Unit = {
       checkPromise()
-      try promise.success(event.responseCode, writeToString(event)(using summon[AnswerEvent.SimpleFactory[A]].codec))
+      try promise.success(event.responseCode, writeToString(event)(using summon[AnswerEvent.Factory[A]].codec))
       catch case e: Throwable => promise.failure(e)
     }
 
@@ -99,9 +99,9 @@ class HttpNetwork[V](bindAddress: InetSocketAddress)(using codec: JsonValueCodec
   }
 
   // TODO: Combine impls
-  private class SimpleSendHandler[A <: AnswerEvent: AnswerEvent.SimpleFactory] extends (HttpResponse[String] => AnswerEvent) {
+  private class SimpleSendHandler[A <: AnswerEvent: AnswerEvent.Factory] extends (HttpResponse[String] => AnswerEvent) {
     override def apply(response: HttpResponse[String]): AnswerEvent = response match
-      case x if x.statusCode() == 200 => readFromString(response.body())(using summon[AnswerEvent.SimpleFactory[A]].codec)
+      case x if x.statusCode() == 200 => readFromString(response.body())(using summon[AnswerEvent.Factory[A]].codec)
       case x if x.statusCode() == 301 => readFromString(response.body())(using RedirectEvent.codec)
       case x if x.statusCode() == 404 => readFromString(response.body())(using NotFoundEvent.codec)
       case x                          => throw IllegalStateException(s"Status code: ${x.statusCode()}")

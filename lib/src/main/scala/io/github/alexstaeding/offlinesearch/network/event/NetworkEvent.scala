@@ -7,20 +7,22 @@ import io.github.alexstaeding.offlinesearch.network.NodeId
 import java.util.UUID
 import scala.reflect.{ClassTag, classTag}
 
-trait NetworkEvent {
+trait NetworkEvent[+V] {
   val id: UUID
+
+  val value: EventResult[V]
 }
 
 object NetworkEvent {
-  trait Factory {
+  trait Factory[N <: NetworkEvent[V], V] {
     val name: String
-  }
 
-  trait SimpleFactory[N <: NetworkEvent] extends Factory {
     given codec: JsonValueCodec[N] = JsonCodecMaker.make
+
+    def create(id: UUID, value: EventResult[V]): N
   }
 
-  trait ParameterizedFactory[N[_] <: NetworkEvent] extends Factory {
-    given codec[V](using JsonValueCodec[V]): JsonValueCodec[N[V]] = JsonCodecMaker.make
+  trait SomeFactory[N <: NetworkEvent[V], V] extends Factory[N, V] {
+    def create(id: UUID, value: V): N
   }
 }
