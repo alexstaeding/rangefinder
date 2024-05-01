@@ -2,8 +2,7 @@ package io.github.alexstaeding.offlinesearch.network
 
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
-import io.github.alexstaeding.offlinesearch.network.event.*
-import io.github.alexstaeding.offlinesearch.network.event.NetworkEvent.SimpleFactory
+import io.github.alexstaeding.offlinesearch.network.event.NetworkEvent.Meta
 
 import java.io.{InputStream, OutputStream}
 import java.net.http.HttpRequest.BodyPublishers
@@ -21,12 +20,6 @@ class HttpNetwork[V](bindAddress: InetSocketAddress)(using codec: JsonValueCodec
   private val client = HttpClient.newHttpClient()
   private val server = HttpServer.create(bindAddress, 0)
   private val receiveQueue = new LinkedBlockingQueue[EventInterceptor[V]]
-  private val sendHandlers: Map[String, HttpResponse[String] => AnswerEvent] = Map(
-    createSendHandler(using PingAnswerEvent),
-    createSendHandler(using StoreValueAnswerEvent),
-    createSendHandler(using FindNodeAnswerEvent),
-    createSendHandler(using FindValueAnswerEvent),
-  )
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 
@@ -40,30 +33,23 @@ class HttpNetwork[V](bindAddress: InetSocketAddress)(using codec: JsonValueCodec
   }
 
   private def createContext[R <: RequestEvent: RequestEvent.SimpleFactory](server: HttpServer): Unit =
-    server.createContext(s"/${summon[NetworkEvent.Factory].name}", new SimpleReceiveHandler[R])
+    server.createContext(s"/${summon[NetworkEvent.Meta].name}", new SimpleReceiveHandler[R])
 
   private def createContext[R[_] <: RequestEvent: RequestEvent.ParameterizedFactory](server: HttpServer): Unit =
-    server.createContext(s"/${summon[NetworkEvent.Factory].name}", new ParameterizedReceiveHandler[R])
-
-  private def createSendHandler[A <: AnswerEvent: AnswerEvent.SimpleFactory]: (String, SimpleSendHandler[A]) =
-    (summon[NetworkEvent.Factory].name, new SimpleSendHandler)
-
-  private def createSendHandler[A[_] <: AnswerEvent: AnswerEvent.ParameterizedFactory]: (String, ParameterizedSendHandler[A]) =
-    (summon[NetworkEvent.Factory].name, new ParameterizedSendHandler)
-
+    server.createContext(s"/${summon[NetworkEvent.Meta].name}", new ParameterizedReceiveHandler[R])
+  
   override def receive(): Future[EventInterceptor[V]] = Future { blocking(receiveQueue.poll()) }
 
-  private def send(nextHop: InetAddress, text: String)(using factory: RequestEvent.Factory): Future[AnswerEvent] = {
-    val handler = sendHandlers(factory.answerName)
+  private def send(nextHop: InetAddress, text: String): Future[AnswerEvent[V]] = {
     val request = HttpRequest
       .newBuilder()
-      .uri(URI.create(s"http://${nextHop.getHostAddress}:${bindAddress.getPort}/${factory.name}"))
+      .uri(URI.create(s"http://${nextHop.getHostAddress}:${bindAddress.getPort}/api/v1/message"))
       .POST(BodyPublishers.ofString(text))
       .build()
 
     client
       .sendAsync(request, BodyHandlers.ofString())
-      .thenApply { handler(_) }
+      .thenApply { response => readFromString(response.body())(using AnswerEvent.codec) }
       .asScala
   }
 
@@ -73,7 +59,7 @@ class HttpNetwork[V](bindAddress: InetSocketAddress)(using codec: JsonValueCodec
   override def send[R[_] <: RequestEvent: RequestEvent.ParameterizedFactory](nextHop: InetAddress, event: R[V]): Future[AnswerEvent] =
     send(nextHop, writeToString(event)(using summon[RequestEvent.ParameterizedFactory[R]].codec))
 
-  private class NetworkEventInterceptor(override val request: RequestEvent) extends EventInterceptor[V] {
+  private class NetworkEventInterceptor(override val request: RequestEvent) extends EventInterceptor {
     private val promise: Promise[(Int, String)] = Promise()
 
     def blockingWait(exchange: HttpExchange): Unit = {
@@ -85,34 +71,18 @@ class HttpNetwork[V](bindAddress: InetSocketAddress)(using codec: JsonValueCodec
 
     private def checkPromise(): Unit = if (promise.isCompleted) throw IllegalStateException("Already answered")
 
-    override def answer[A <: AnswerEvent: AnswerEvent.SimpleFactory](event: A): Unit = {
+    override def answer[A <: AnswerEvent: NetworkEvent.Meta](event: A): Unit = {
       checkPromise()
-      try promise.success(event.responseCode, writeToString(event)(using summon[AnswerEvent.SimpleFactory[A]].codec))
-      catch case e: Throwable => promise.failure(e)
-    }
-
-    def answer[A[_] <: AnswerEvent: AnswerEvent.ParameterizedFactory](event: A[V]): Unit = {
-      checkPromise()
-      try promise.success(event.responseCode, writeToString(event)(using summon[AnswerEvent.ParameterizedFactory[A]].codec))
+      try promise.success(event.responseCode, writeToString(event)(using summon[NetworkEvent.Meta[A]].codec))
       catch case e: Throwable => promise.failure(e)
     }
   }
 
-  // TODO: Combine impls
-  private class SimpleSendHandler[A <: AnswerEvent: AnswerEvent.SimpleFactory] extends (HttpResponse[String] => AnswerEvent) {
-    override def apply(response: HttpResponse[String]): AnswerEvent = response match
-      case x if x.statusCode() == 200 => readFromString(response.body())(using summon[AnswerEvent.SimpleFactory[A]].codec)
+  private class SimpleSendHandler[A <: AnswerEvent[V]] extends (HttpResponse[String] => AnswerEvent[V]) {
+    override def apply(response: HttpResponse[String]): AnswerEvent[V] = response match
+      case x if x.statusCode() == 200 => readFromString(response.body())(using summon[NetworkEvent.Meta[A]].codec)
       case x if x.statusCode() == 301 => readFromString(response.body())(using RedirectEvent.codec)
-      case x if x.statusCode() == 404 => readFromString(response.body())(using NotFoundEvent.codec)
-      case x                          => throw IllegalStateException(s"Status code: ${x.statusCode()}")
-  }
-
-  private class ParameterizedSendHandler[A[_] <: AnswerEvent: AnswerEvent.ParameterizedFactory]
-      extends (HttpResponse[String] => AnswerEvent) {
-    override def apply(response: HttpResponse[String]): AnswerEvent = response match
-      case x if x.statusCode() == 200 => readFromString(response.body())(using summon[AnswerEvent.ParameterizedFactory[A]].codec)
-      case x if x.statusCode() == 301 => readFromString(response.body())(using RedirectEvent.codec)
-      case x if x.statusCode() == 404 => readFromString(response.body())(using NotFoundEvent.codec)
+      case x if x.statusCode() == 404 => readFromString(response.body())(using NotFoundEvent.meta.codec)
       case x                          => throw IllegalStateException(s"Status code: ${x.statusCode()}")
   }
 

@@ -1,6 +1,6 @@
 package io.github.alexstaeding.offlinesearch.network
 
-import io.github.alexstaeding.offlinesearch.network.event.{AnswerEvent, EventInterceptor, RequestEvent}
+import io.github.alexstaeding.offlinesearch.network.event.{AnswerEvent, RequestEvent}
 
 import java.net.InetAddress
 import scala.concurrent.Future
