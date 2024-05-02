@@ -1,7 +1,5 @@
 package io.github.alexstaeding.offlinesearch.network
 
-import java.net.InetAddress
-import java.util
 import scala.concurrent.Future
 
 trait Routing[V] {
@@ -13,4 +11,8 @@ trait Routing[V] {
   def findNode(targetId: NodeId): Future[NodeInfo]
 
   def findValue(targetId: NodeId): Future[V]
+
+  def startReceiver(): Unit
+
+  def putLocal(id: NodeId, value: NodeInfo | V): Boolean
 }

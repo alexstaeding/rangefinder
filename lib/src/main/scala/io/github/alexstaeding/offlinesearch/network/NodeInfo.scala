@@ -3,22 +3,26 @@ package io.github.alexstaeding.offlinesearch.network
 import com.github.plokhotnyuk.jsoniter_scala.core.{JsonReader, JsonValueCodec, JsonWriter}
 import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 
-import java.net.InetAddress
+import java.net.InetSocketAddress
 
-case class NodeInfo(id: NodeId, ip: InetAddress)
+case class NodeInfo(id: NodeId, address: InetSocketAddress)
 
 object NodeInfo {
-  given inetAddressCodec: JsonValueCodec[InetAddress] = new JsonValueCodec[InetAddress] {
+  given inetAddressCodec: JsonValueCodec[InetSocketAddress] = new JsonValueCodec[InetSocketAddress] {
 
-    override def decodeValue(in: JsonReader, default: InetAddress): InetAddress = {
-      val hostAddress = in.readString(null)
-      if (hostAddress == null) default else InetAddress.getByName(hostAddress)
+    override def decodeValue(in: JsonReader, default: InetSocketAddress): InetSocketAddress = {
+      val (host, port) = in.readString(null).split(":") match {
+        case Array(host)       => throw new IllegalArgumentException(s"Invalid address (missing port): $host")
+        case Array(host, port) => (host, port.toInt)
+        case _                 => return default
+      }
+      new InetSocketAddress(host, port)
     }
 
-    override def encodeValue(x: InetAddress, out: JsonWriter): Unit =
-      out.writeVal(if (x == null) null else x.getHostAddress)
+    override def encodeValue(x: InetSocketAddress, out: JsonWriter): Unit =
+      out.writeVal(x.getHostString + ":" + x.getPort)
 
-    override def nullValue: InetAddress = null
+    override def nullValue: InetSocketAddress = null
   }
 
   given codec: JsonValueCodec[NodeInfo] = JsonCodecMaker.make

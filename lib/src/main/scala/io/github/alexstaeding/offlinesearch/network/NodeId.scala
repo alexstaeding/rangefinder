@@ -1,7 +1,6 @@
 package io.github.alexstaeding.offlinesearch.network
 
 import com.github.plokhotnyuk.jsoniter_scala.core.{JsonKeyCodec, JsonReader, JsonValueCodec, JsonWriter}
-import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 
 import java.util
 
@@ -28,9 +27,12 @@ object NodeId {
 
   def zero(using idSpace: NodeIdSpace): NodeId = NodeId(Array.fill[Byte](idSpace.size)(0))
 
-  def fromHex(hex: String)(using idSpace: NodeIdSpace): NodeId = {
-    val bytes = hex.grouped(2).map(Integer.parseInt(_, 16).toByte).toArray
-    NodeId(bytes)
+  def fromHex(hex: String)(using idSpace: NodeIdSpace): Option[NodeId] = {
+    val bytes = try
+      hex.grouped(2).map(Integer.parseInt(_, 16).toByte).toArray
+    catch
+      case e: NumberFormatException => return None
+    Some(NodeId(bytes))
   }
 
   case class DistanceOrdering(targetId: NodeId) extends Ordering[NodeId] {
@@ -48,14 +50,14 @@ object NodeId {
   }
 
   given keyCodec(using NodeIdSpace): JsonKeyCodec[NodeId] = new JsonKeyCodec[NodeId] {
-    override def decodeKey(in: JsonReader): NodeId = NodeId.fromHex(in.readKeyAsString())
+    override def decodeKey(in: JsonReader): NodeId = NodeId.fromHex(in.readKeyAsString()).get
     override def encodeKey(x: NodeId, out: JsonWriter): Unit = out.writeKey(x.toHex)
   }
 
   given valueCodec(using NodeIdSpace): JsonValueCodec[NodeId] = new JsonValueCodec[NodeId]:
     override def decodeValue(in: JsonReader, default: NodeId): NodeId = {
       val hex = in.readString(null)
-      if (hex == null) default else NodeId.fromHex(hex)
+      if (hex == null) default else NodeId.fromHex(hex).get
     }
 
     override def encodeValue(x: NodeId, out: JsonWriter): Unit = out.writeVal(x.toHex)

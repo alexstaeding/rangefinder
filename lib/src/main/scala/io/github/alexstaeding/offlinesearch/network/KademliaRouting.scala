@@ -2,7 +2,7 @@ package io.github.alexstaeding.offlinesearch.network
 
 import io.github.alexstaeding.offlinesearch.network.NodeId.DistanceOrdering
 
-import java.net.InetAddress
+import java.net.{InetAddress, InetSocketAddress}
 import java.util
 import java.util.UUID
 import java.util.concurrent.Executors
@@ -36,7 +36,11 @@ class KademliaRouting[V](
   private def distanceLeadingZeros(id: NodeId): Int = {
     val distance = localNodeInfo.id.xor(id)
     val firstByte = distance.bytes.indexWhere(_ != 0)
-    val bitPrefix = Integer.numberOfLeadingZeros(distance.bytes(firstByte)) - 24
+    if (firstByte == -1) {
+      // no difference, self
+      return 0
+    }
+    val bitPrefix = Integer.numberOfLeadingZeros(distance.bytes(firstByte) & 0xff) - 24
     firstByte * 8 + bitPrefix
   }
 
@@ -51,10 +55,23 @@ class KademliaRouting[V](
       .collect { case (key, _) if distanceLeadingZeros(key) == partitionIndex => key }
       .foreach { key => destination.put(key, source.remove(key).get) }
 
+  def startReceiver(): Unit = {
+    println("Starting receiver...")
+    ec.submit(new Runnable {
+      override def run(): Unit = {
+        println("Inside receiver")
+        while (true) {
+          println("Waiting...")
+          receive()
+        }
+      }
+    })
+  }
+
   private def receive(): Unit = {
-    val interceptor = Await.result(env.network.receive(), 0.nanos)
+    val interceptor = Await.result(env.network.receive(), 2.seconds)
     val request = interceptor.request
-    putInBucket(request.sourceInfo.id, request.sourceInfo)
+    putLocal(request.sourceInfo.id, request.sourceInfo)
     val answer: AnswerEvent[V] = request match
       case PingEvent(requestId, sourceInfo, targetId) =>
         getLocalValue(targetId) match
@@ -62,7 +79,7 @@ class KademliaRouting[V](
           case None =>
             getLocalNode(targetId) match
               case Some(nodeInfo) => RedirectEvent(requestId, nodeInfo)
-              case None => 
+              case None =>
                 getClosestBetterThan(targetId, localNodeInfo.id) match
                   case closest if closest.nonEmpty => RedirectEvent(requestId, closest.head)
                   case _ => PingAnswerEvent(requestId, success = false)
@@ -93,7 +110,7 @@ class KademliaRouting[V](
     }
   }
 
-  private def putInBucket(id: NodeId, value: NodeInfo | V): Boolean = {
+  override def putLocal(id: NodeId, value: NodeInfo | V): Boolean = {
     val index = distanceLeadingZeros(id)
     ensureBucketSpace(index) match {
       case Some(bucket) => {
@@ -151,18 +168,18 @@ class KademliaRouting[V](
   }
 
   @tailrec
-  private def pingRemote(nextHop: InetAddress, targetId: NodeId): Future[Boolean] = {
+  private def pingRemote(nextHop: InetSocketAddress, targetId: NodeId): Future[Boolean] = {
     println(s"Pinging remote $nextHop with target $targetId")
     implicit val x: PingEvent.type = PingEvent
     val request = createRequest { requestId => PingEvent(requestId, localNodeInfo, targetId) }
-    Await.result(env.network.send(nextHop, request), 0.nanos) match
+    Await.result(env.network.send(nextHop, request), 2.seconds) match
       case PingAnswerEvent(id, success) =>
         if (id != targetId) throw IllegalStateException(s"Received ping answer for incorrect id $id instead of $targetId")
         Future.successful(success)
       case RedirectEvent(id, closerTargetInfo) =>
         if (id != targetId) throw IllegalStateException(s"Received redirect for incorrect id $id instead of $targetId")
         // TODO: Save id?
-        pingRemote(closerTargetInfo.ip, targetId)
+        pingRemote(closerTargetInfo.address, targetId)
       case answer @ _ => throw IllegalStateException(s"Unexpected answer received: $answer")
   }
 
@@ -171,7 +188,7 @@ class KademliaRouting[V](
       case Some(_) => Future.successful(true)
       case _ =>
         getLocalNode(targetId) match
-          case Some(node) => pingRemote(node.ip, targetId)
+          case Some(node) => pingRemote(node.address, targetId)
           case _ =>
             Future
               .find(getClosest(targetId).map { case NodeInfo(_, ip) => pingRemote(ip, targetId) })(identity)

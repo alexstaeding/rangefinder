@@ -11,11 +11,12 @@ import java.util.concurrent.{Executors, LinkedBlockingQueue}
 import scala.concurrent.*
 import scala.concurrent.duration.DurationInt
 import scala.jdk.FutureConverters.CompletionStageOps
+import scala.util.{Failure, Success}
 
 class HttpNetwork[V](bindAddress: InetSocketAddress)(using codec: JsonValueCodec[V]) extends Network[V] {
 
   private val client = HttpClient.newHttpClient()
-  private val server = HttpServer.create(bindAddress, 0)
+  private val server = HttpServer.create(bindAddress, 10)
   private val receiveQueue = new LinkedBlockingQueue[EventInterceptor[V]]
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
@@ -26,22 +27,30 @@ class HttpNetwork[V](bindAddress: InetSocketAddress)(using codec: JsonValueCodec
       (exchange: HttpExchange) => {
         val interceptor = new NetworkEventInterceptor(readFromStream(exchange.getRequestBody)(using RequestEvent.codec))
         receiveQueue.put(interceptor)
-        val response = interceptor.awaitResponse()
-        exchange.sendResponseHeaders(200, response.length)
-        exchange.getResponseBody.write(response.getBytes)
-        exchange.close()
+        interceptor.future.onComplete {
+          case Success(response) =>
+            exchange.sendResponseHeaders(200, 0)
+            exchange.getResponseBody.write(response.getBytes)
+            exchange.close()
+          case Failure(exception) =>
+            exchange.sendResponseHeaders(500, 0)
+            exchange.close()
+            exception.printStackTrace()
+            throw exception
+        }
       },
     )
     server.setExecutor(ec)
     server.start()
+    println("Started server on " + bindAddress)
   }
 
   override def receive(): Future[EventInterceptor[V]] = Future { blocking(receiveQueue.poll()) }
 
-  override def send(nextHop: InetAddress, event: RequestEvent[V]): Future[AnswerEvent[V]] = {
+  override def send(nextHop: InetSocketAddress, event: RequestEvent[V]): Future[AnswerEvent[V]] = {
     val request = HttpRequest
       .newBuilder()
-      .uri(URI.create(s"http://${nextHop.getHostAddress}:${bindAddress.getPort}/api/v1/message"))
+      .uri(URI.create(s"http://${nextHop.getAddress.getHostAddress}:${nextHop.getPort}/api/v1/message"))
       .POST(BodyPublishers.ofString(writeToString(event)))
       .build()
 
@@ -53,7 +62,8 @@ class HttpNetwork[V](bindAddress: InetSocketAddress)(using codec: JsonValueCodec
 
   private class NetworkEventInterceptor(override val request: RequestEvent[V]) extends EventInterceptor[V] {
     private val promise: Promise[String] = Promise()
-    def awaitResponse(): String = Await.result(promise.future, 0.nanos)
+    val future: Future[String] = promise.future
+//    def awaitResponse(): String = Await.result(promise.future, 2.seconds)
 
     private def checkPromise(): Unit = if (promise.isCompleted) throw IllegalStateException("Already answered")
 
