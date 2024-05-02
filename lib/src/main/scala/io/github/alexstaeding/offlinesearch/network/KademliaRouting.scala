@@ -1,7 +1,5 @@
 package io.github.alexstaeding.offlinesearch.network
 
-import io.github.alexstaeding.offlinesearch.network.event.*
-
 import java.net.InetAddress
 import java.util
 import java.util.UUID
@@ -31,16 +29,14 @@ class KademliaRouting[V](
     */
   private val homeBucket: KBucket = new KBucket
 
-  private val openRequests: mutable.Map[UUID, RequestEvent] = new mutable.HashMap[UUID, RequestEvent]
+  private val openRequests: mutable.Map[UUID, RequestEvent[V]] = new mutable.HashMap[UUID, RequestEvent[V]]
 
-  private def createRequest[N <: RequestEvent: RequestEvent.SimpleFactory](targetId: NodeId): N = {
+  private def createRequest[N <: RequestEvent[V]](ctor: UUID => N): N = {
     val id = UUID.randomUUID()
-    val request = summon[RequestEvent.SimpleFactory[N]].create(id, targetId)
+    val request = ctor(id)
     openRequests.put(id, request)
     request
   }
-
-  private def createRequestFuture[N <: RequestEvent](): Unit = {}
 
   private def distanceLeadingZeros(id: NodeId): Int = {
     val distance = localNodeId.xor(id)
@@ -127,15 +123,13 @@ class KademliaRouting[V](
 
   @tailrec
   private def pingRemote(nextHop: InetAddress, targetId: NodeId): Future[Boolean] = {
+    println(s"Pinging remote $nextHop with target $targetId")
     implicit val x: PingEvent.type = PingEvent
-    val request = createRequest(targetId)
+    val request = createRequest { requestId => PingEvent(requestId, targetId) }
     Await.result(env.network.send(nextHop, request), 0.nanos) match
-      case PingAnswerEvent(id) =>
+      case PingAnswerEvent(id, success) =>
         if (id != targetId) throw IllegalStateException(s"Received ping answer for incorrect id $id instead of $targetId")
-        Future.successful(true)
-      case NotFoundEvent(id) =>
-        if (id != targetId) throw IllegalStateException(s"Received not found for incorrect id $id instead of $targetId")
-        Future.successful(false)
+        Future.successful(success)
       case RedirectEvent(id, closerTargetInfo) =>
         if (id != targetId) throw IllegalStateException(s"Received redirect for incorrect id $id instead of $targetId")
         // TODO: Save id?

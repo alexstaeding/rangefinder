@@ -10,13 +10,14 @@ case class NodeId(bytes: Array[Byte])(using val space: NodeIdSpace) {
     case _           => false
   }
   override def canEqual(that: Any): Boolean = that.isInstanceOf[NodeId]
+  override def toString: String = bytes.map("%02x".format(_)).mkString.grouped(4).mkString(" ")
 }
 
 object NodeId {
   case class DistanceOrdering(targetId: NodeId) extends Ordering[NodeId] {
     override def compare(x: NodeId, y: NodeId): Int = NaturalOrdering.compare(x.xor(targetId), y.xor(targetId))
   }
-  object NaturalOrdering extends Ordering[NodeId] {
+  case object NaturalOrdering extends Ordering[NodeId] {
     override def compare(x: NodeId, y: NodeId): Int = BigInt(x.bytes) compare BigInt(y.bytes)
   }
 
