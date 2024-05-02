@@ -3,15 +3,13 @@ package io.github.alexstaeding.offlinesearch.network
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
 
-import java.io.{InputStream, OutputStream}
 import java.net.http.HttpRequest.BodyPublishers
 import java.net.http.HttpResponse.BodyHandlers
 import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.net.{InetAddress, InetSocketAddress, URI}
-import java.util.concurrent.{ConcurrentLinkedDeque, Executors, LinkedBlockingQueue}
+import java.util.concurrent.{Executors, LinkedBlockingQueue}
 import scala.concurrent.*
 import scala.concurrent.duration.DurationInt
-import scala.io.Source
 import scala.jdk.FutureConverters.CompletionStageOps
 
 class HttpNetwork[V](bindAddress: InetSocketAddress)(using codec: JsonValueCodec[V]) extends Network[V] {
@@ -40,11 +38,11 @@ class HttpNetwork[V](bindAddress: InetSocketAddress)(using codec: JsonValueCodec
 
   override def receive(): Future[EventInterceptor[V]] = Future { blocking(receiveQueue.poll()) }
 
-  private def send(nextHop: InetAddress, text: String): Future[AnswerEvent[V]] = {
+  override def send(nextHop: InetAddress, event: RequestEvent[V]): Future[AnswerEvent[V]] = {
     val request = HttpRequest
       .newBuilder()
       .uri(URI.create(s"http://${nextHop.getHostAddress}:${bindAddress.getPort}/api/v1/message"))
-      .POST(BodyPublishers.ofString(text))
+      .POST(BodyPublishers.ofString(writeToString(event)))
       .build()
 
     client

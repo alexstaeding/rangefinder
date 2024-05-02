@@ -1,13 +1,18 @@
 package io.github.alexstaeding.offlinesearch.meta
 
+import org.apache.logging.log4j.LogManager
+
 /** A partial T that represents a cluster of Ts that are "close enough"
   * together.
   */
-case class PartialKey[T](value: T)
+case class PartialKey[V](value: V) {
+  def foo(): Unit = {
+    LogManager.getLogger
+  }
+}
 
-trait PartialKeyActions[T] {
-  extension (partialKey: PartialKey[T]) {
-    def matches(search: T): Boolean
-    def ring(degree: Int): PartialKeyRing[T]
+trait PartialKeyActions[V] {
+  extension (partialKey: PartialKey[V]) {
+    def matches(search: V): Boolean
   }
 }

@@ -17,13 +17,18 @@ sealed trait RequestEvent[V] extends NetworkEvent[V] {
   val targetId: NodeId
 }
 
-trait EventCodecFactory[E[V] <: NetworkEvent[V]] {
-  given codec[V](using JsonValueCodec[V]): JsonValueCodec[E[V]] = JsonCodecMaker.make
+// TODO: With higher kinded types?
+object NetworkEvent {
+  given codec[V](using JsonValueCodec[V]): JsonValueCodec[NetworkEvent[V]] = JsonCodecMaker.make
 }
 
-object NetworkEvent extends EventCodecFactory[NetworkEvent]
-object AnswerEvent extends EventCodecFactory[AnswerEvent]
-object RequestEvent extends EventCodecFactory[RequestEvent]
+object AnswerEvent {
+  given codec[V](using JsonValueCodec[V]): JsonValueCodec[AnswerEvent[V]] = JsonCodecMaker.make
+}
+
+object RequestEvent {
+  given codec[V](using JsonValueCodec[V]): JsonValueCodec[RequestEvent[V]] = JsonCodecMaker.make
+}
 
 case class PingEvent[V](override val requestId: UUID, override val targetId: NodeId) extends RequestEvent[V]
 case class FindNodeEvent[V](override val requestId: UUID, override val targetId: NodeId) extends RequestEvent[V]
@@ -36,3 +41,10 @@ case class FindValueAnswerEvent[V](override val requestId: UUID, value: Option[V
 case class StoreValueAnswerEvent[V](override val requestId: UUID, success: Boolean) extends AnswerEvent[V]
 
 case class RedirectEvent[V](override val requestId: UUID, closerTargetInfo: NodeInfo) extends AnswerEvent[V]
+
+object RedirectEvent {
+  given codec[V](using JsonValueCodec[V]): JsonValueCodec[RedirectEvent[V]] = {
+    import NodeInfo.inetAddressCodec
+    JsonCodecMaker.make
+  }
+}
