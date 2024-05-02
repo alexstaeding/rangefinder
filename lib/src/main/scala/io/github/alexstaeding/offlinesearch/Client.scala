@@ -9,14 +9,14 @@ import scala.collection.mutable
 import scala.collection.mutable.ArrayDeque
 import scala.reflect.Selectable.reflectiveSelectable
 
-class Client[T, P](
+class Client[V](
     env: {
-      val network: Network
+      val network: Network[V]
     },
-    val peers: collection.Seq[P],
+//    val peers: collection.Seq[P],
 ) {
 
-  var indexGroups = new mutable.ArrayDeque[ReplicationGroup[T]]
+  var indexGroups = new mutable.ArrayDeque[ReplicationGroup[V]]
 
 //  def peers = new mutable.ArrayDeque[Peer]
 

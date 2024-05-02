@@ -2,7 +2,6 @@ package io.github.alexstaeding.offlinesearch.meta
 
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
-import io.github.alexstaeding.offlinesearch.NodeId
 import io.github.alexstaeding.offlinesearch.crdt.{Lattice, NodeScoped, ReplicatedLWW}
 
 case class MetaIndex[T](data: NodeScoped[ReplicatedLWW[Seq[PartialKey[T]]]])
