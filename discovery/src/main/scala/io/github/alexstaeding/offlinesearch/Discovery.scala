@@ -1,7 +1,6 @@
-package io.github.alexstaeding
+package io.github.alexstaeding.offlinesearch
 
-import org.apache.logging.log4j.Logger
-import org.apache.logging.log4j.LogManager
+import org.apache.logging.log4j.{LogManager, Logger}
 
 import scala.collection.mutable
 
@@ -9,6 +8,11 @@ object Discovery {
 
   private val logger: Logger = LogManager.getLogger
   private val clients = mutable.Set[String]()
+
+  @main
+  def main(): Unit = {
+    logger.info("Starting discovery service")
+  }
 
 //  private val service = HttpRoutes
 //    .of[IO] {

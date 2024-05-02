@@ -1,5 +1,7 @@
 package io.github.alexstaeding.offlinesearch.network
 
+import io.github.alexstaeding.offlinesearch.network.NodeId.DistanceOrdering
+
 import java.net.InetAddress
 import java.util
 import java.util.UUID
@@ -12,7 +14,7 @@ import scala.reflect.Selectable.reflectiveSelectable
 
 class KademliaRouting[V](
     private val idSpace: NodeIdSpace,
-    private val localNodeId: NodeId,
+    private val localNodeInfo: NodeInfo,
     private val kMaxSize: Int = 20, // Size of K-Buckets
     private val concurrency: Int = 3, // Number of concurrent searches
 )(using
@@ -31,15 +33,8 @@ class KademliaRouting[V](
 
   private val openRequests: mutable.Map[UUID, RequestEvent[V]] = new mutable.HashMap[UUID, RequestEvent[V]]
 
-  private def createRequest[N <: RequestEvent[V]](ctor: UUID => N): N = {
-    val id = UUID.randomUUID()
-    val request = ctor(id)
-    openRequests.put(id, request)
-    request
-  }
-
   private def distanceLeadingZeros(id: NodeId): Int = {
-    val distance = localNodeId.xor(id)
+    val distance = localNodeInfo.id.xor(id)
     val firstByte = distance.bytes.indexWhere(_ != 0)
     val bitPrefix = Integer.numberOfLeadingZeros(distance.bytes(firstByte)) - 24
     firstByte * 8 + bitPrefix
@@ -55,6 +50,26 @@ class KademliaRouting[V](
     source
       .collect { case (key, _) if distanceLeadingZeros(key) == partitionIndex => key }
       .foreach { key => destination.put(key, source.remove(key).get) }
+
+  private def receive(): Unit = {
+    val interceptor = Await.result(env.network.receive(), 0.nanos)
+    val request = interceptor.request
+    putInBucket(request.sourceInfo.id, request.sourceInfo)
+    val answer: AnswerEvent[V] = request match
+      case PingEvent(requestId, sourceInfo, targetId) =>
+        getLocalValue(targetId) match
+          case Some(value) => PingAnswerEvent(requestId, success = true)
+          case None =>
+            getLocalNode(targetId) match
+              case Some(nodeInfo) => RedirectEvent(requestId, nodeInfo)
+              case None => 
+                getClosestBetterThan(targetId, localNodeInfo.id) match
+                  case closest if closest.nonEmpty => RedirectEvent(requestId, closest.head)
+                  case _ => PingAnswerEvent(requestId, success = false)
+      case request @ _ => throw IllegalStateException(s"Unexpected request received: $request")
+
+    interceptor.answer(answer)
+  }
 
   @tailrec
   private def ensureBucketSpace(index: Int): Option[KBucket] = {
@@ -78,11 +93,13 @@ class KademliaRouting[V](
     }
   }
 
-  private def putInBucket(id: NodeId, value: NodeInfo): Boolean = {
+  private def putInBucket(id: NodeId, value: NodeInfo | V): Boolean = {
     val index = distanceLeadingZeros(id)
     ensureBucketSpace(index) match {
       case Some(bucket) => {
-        bucket.nodes.put(id, value)
+        value match
+          case nodeInfo @ NodeInfo(_, _) => bucket.nodes.put(id, nodeInfo)
+          case _                         => bucket.values.put(id, value.asInstanceOf[V])
         true
       }
       case None => false
@@ -108,9 +125,14 @@ class KademliaRouting[V](
     }
   }
 
+  private def getClosestBetterThan(targetId: NodeId, than: NodeId): Seq[NodeInfo] =
+    getClosest(targetId).filter(info => DistanceOrdering(targetId).compare(info.id, than) < 0)
+
   private def getLocalValue(targetId: NodeId): Option[V] = getKBucket(distanceLeadingZeros(targetId)).values.get(targetId)
 
   private def getLocalNode(targetId: NodeId): Option[NodeInfo] = getKBucket(distanceLeadingZeros(targetId)).nodes.get(targetId)
+
+  private def getLocal(targetId: NodeId): Option[NodeInfo | V] = getLocalNode(targetId).orElse(getLocalValue(targetId))
 
   private class KBucket {
     val nodes: mutable.Map[NodeId, NodeInfo] = new mutable.HashMap[NodeId, NodeInfo]()
@@ -121,11 +143,18 @@ class KademliaRouting[V](
     def hasSpace: Boolean = !isFull
   }
 
+  private def createRequest[N <: RequestEvent[V]](ctor: UUID => N): N = {
+    val id = UUID.randomUUID()
+    val request = ctor(id)
+    openRequests.put(id, request)
+    request
+  }
+
   @tailrec
   private def pingRemote(nextHop: InetAddress, targetId: NodeId): Future[Boolean] = {
     println(s"Pinging remote $nextHop with target $targetId")
     implicit val x: PingEvent.type = PingEvent
-    val request = createRequest { requestId => PingEvent(requestId, targetId) }
+    val request = createRequest { requestId => PingEvent(requestId, localNodeInfo, targetId) }
     Await.result(env.network.send(nextHop, request), 0.nanos) match
       case PingAnswerEvent(id, success) =>
         if (id != targetId) throw IllegalStateException(s"Received ping answer for incorrect id $id instead of $targetId")
@@ -134,6 +163,7 @@ class KademliaRouting[V](
         if (id != targetId) throw IllegalStateException(s"Received redirect for incorrect id $id instead of $targetId")
         // TODO: Save id?
         pingRemote(closerTargetInfo.ip, targetId)
+      case answer @ _ => throw IllegalStateException(s"Unexpected answer received: $answer")
   }
 
   override def ping(targetId: NodeId): Future[Boolean] = {
