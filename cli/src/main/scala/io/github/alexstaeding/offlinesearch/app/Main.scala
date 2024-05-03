@@ -3,7 +3,7 @@ package io.github.alexstaeding.offlinesearch.app
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 import io.github.alexstaeding.offlinesearch.network.{NodeId, NodeIdSpace, NodeInfo}
-import io.github.alexstaeding.offlinesearch.{Client, Environment}
+import io.github.alexstaeding.offlinesearch.Client
 
 import java.net.InetSocketAddress
 import scala.io.StdIn

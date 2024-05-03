@@ -10,18 +10,16 @@ import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
-import scala.reflect.Selectable.reflectiveSelectable
 
 class KademliaRouting[V](
-    private val idSpace: NodeIdSpace,
-    private val localNodeInfo: NodeInfo,
-    private val kMaxSize: Int = 20, // Size of K-Buckets
-    private val concurrency: Int = 3, // Number of concurrent searches
-)(using
-    private val env: {
-      val network: Network[V]
-    },
-) extends Routing[V] {
+                          private val networkFactory: NetworkAdapter.Factory,
+                          private val idSpace: NodeIdSpace,
+                          private val localNodeInfo: NodeInfo,
+                          private val kMaxSize: Int = 20, // Size of K-Buckets
+                          private val concurrency: Int = 3, // Number of concurrent searches
+)() extends Routing[V] {
+  
+  val network = networkFactory.create(localNodeInfo.address)
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 
@@ -44,7 +42,7 @@ class KademliaRouting[V](
     firstByte * 8 + bitPrefix
   }
 
-  private def getKBucket(distance: Int): KBucket = if (distance < buckets.size) buckets(distance) else homeBucket
+  private def getKBucket(leadingZeros: Int): KBucket = if (leadingZeros < buckets.size) buckets(leadingZeros) else homeBucket
 
   private def moveEntries[T](
       partitionIndex: Int,
@@ -69,7 +67,9 @@ class KademliaRouting[V](
   }
 
   private def receive(): Unit = {
-    val interceptor = Await.result(env.network.receive(), 2.seconds)
+    println("In receive")
+    val interceptor = Await.result(env.network.receive(), 20.minutes)
+    println(s"Received: $interceptor")
     val request = interceptor.request
     putLocal(request.sourceInfo.id, request.sourceInfo)
     val answer: AnswerEvent[V] = request match
@@ -82,7 +82,7 @@ class KademliaRouting[V](
               case None =>
                 getClosestBetterThan(targetId, localNodeInfo.id) match
                   case closest if closest.nonEmpty => RedirectEvent(requestId, closest.head)
-                  case _ => PingAnswerEvent(requestId, success = false)
+                  case _                           => PingAnswerEvent(requestId, success = false)
       case request @ _ => throw IllegalStateException(s"Unexpected request received: $request")
 
     interceptor.answer(answer)
