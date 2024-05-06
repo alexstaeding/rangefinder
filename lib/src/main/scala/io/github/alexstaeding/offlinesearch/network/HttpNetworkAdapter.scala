@@ -2,20 +2,20 @@ package io.github.alexstaeding.offlinesearch.network
 
 import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
+import org.apache.logging.log4j.Logger
 
 import java.net.http.HttpRequest.BodyPublishers
 import java.net.http.HttpResponse.BodyHandlers
 import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.net.{InetSocketAddress, URI}
-import java.util.concurrent.{Executors, LinkedBlockingQueue}
+import java.util.concurrent.Executors
 import scala.concurrent.*
 import scala.jdk.FutureConverters.CompletionStageOps
-import scala.util.{Failure, Success}
 
-class HttpNetworkAdapter[V](
+class HttpNetworkAdapter[V: JsonValueCodec](
     private val bindAddress: InetSocketAddress,
     private val onReceive: RequestEvent[V] => AnswerEvent[V],
-)(using codec: JsonValueCodec[V])
+)(using logger: Logger)
     extends NetworkAdapter[V] {
 
   private val client = HttpClient.newHttpClient()
@@ -26,7 +26,7 @@ class HttpNetworkAdapter[V](
     server.createContext(
       "/api/v1/message",
       (exchange: HttpExchange) => {
-        println("Received message")
+        logger.info("Received message")
         val answer = onReceive(readFromStream(exchange.getRequestBody)(using RequestEvent.codec))
         val response = writeToString(answer)
         exchange.sendResponseHeaders(200, response.length)
@@ -36,14 +36,14 @@ class HttpNetworkAdapter[V](
     )
     server.setExecutor(ec)
     server.start()
-    println("Started server on " + bindAddress)
+    logger.info("Started server on " + bindAddress)
   }
 
   override def send(nextHop: InetSocketAddress, event: RequestEvent[V]): Future[AnswerEvent[V]] = {
     val request = HttpRequest
       .newBuilder()
       .uri(URI.create(s"http://${nextHop.getAddress.getHostAddress}:${nextHop.getPort}/api/v1/message"))
-      .POST(BodyPublishers.ofString(writeToString(event)))
+      .POST(BodyPublishers.ofString(writeToString(event)(using RequestEvent.codec)))
       .build()
 
     client
@@ -57,5 +57,5 @@ object HttpNetworkAdapter extends NetworkAdapter.Factory {
   override def create[V: JsonValueCodec](
       bindAddress: InetSocketAddress,
       onReceive: RequestEvent[V] => AnswerEvent[V],
-  ): NetworkAdapter[V] = HttpNetworkAdapter(bindAddress, onReceive)
+  )(using logger: Logger): NetworkAdapter[V] = HttpNetworkAdapter(bindAddress, onReceive)
 }

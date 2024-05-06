@@ -11,14 +11,14 @@ import java.util.concurrent.Executors
 import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
+import scala.util.{Failure, Success, Try}
 
 class KademliaRouting[V: JsonValueCodec](
     private val networkFactory: NetworkAdapter.Factory,
     private val localNodeInfo: NodeInfo,
-    private val logger: Logger,
     private val kMaxSize: Int = 20, // Size of K-Buckets
     private val concurrency: Int = 3, // Number of concurrent searches
-)(using idSpace: NodeIdSpace)
+)(using idSpace: NodeIdSpace, logger: Logger)
     extends Routing[V] {
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
@@ -32,6 +32,8 @@ class KademliaRouting[V: JsonValueCodec](
   private val homeBucket: KBucket = new KBucket
 
   private val openRequests: mutable.Map[UUID, RequestEvent[V]] = new mutable.HashMap[UUID, RequestEvent[V]]
+
+  homeBucket.nodes.put(NodeId.zero, localNodeInfo)
 
   private def distanceLeadingZeros(id: NodeId): Int = {
     val distance = localNodeInfo.id.xor(id)
@@ -56,20 +58,26 @@ class KademliaRouting[V: JsonValueCodec](
       .foreach { key => destination.put(key, source.remove(key).get) }
 
   private def receive(request: RequestEvent[V]): AnswerEvent[V] = {
-    println(s"Received: $request")
+    logger.info(s"Received: $request")
     putLocal(request.sourceInfo.id, request.sourceInfo)
-    request match
+    val answer: AnswerEvent[V] = request match
       case PingEvent(requestId, sourceInfo, targetId) =>
-        getLocalValue(targetId) match
-          case Some(value) => PingAnswerEvent(requestId, success = true)
-          case None =>
-            getLocalNode(targetId) match
-              case Some(nodeInfo) => RedirectEvent(requestId, nodeInfo)
-              case None =>
-                getClosestBetterThan(targetId, localNodeInfo.id) match
-                  case closest if closest.nonEmpty => RedirectEvent(requestId, closest.head)
-                  case _                           => PingAnswerEvent(requestId, success = false)
+        if (targetId == localNodeInfo.id) {
+          PingAnswerEvent(requestId, success = true)
+        } else {
+          getLocalValue(targetId) match
+            case Some(value) => PingAnswerEvent(requestId, success = true)
+            case None =>
+              getLocalNode(targetId) match
+                case Some(nodeInfo) => RedirectEvent(requestId, nodeInfo)
+                case None =>
+                  getClosestBetterThan(targetId, localNodeInfo.id) match
+                    case closest if closest.nonEmpty => RedirectEvent(requestId, closest.head)
+                    case _                           => PingAnswerEvent(requestId, success = false)
+        }
       case request @ _ => throw IllegalStateException(s"Unexpected request received: $request")
+    logger.info(s"Answering: $answer")
+    answer
   }
 
   @tailrec
@@ -152,19 +160,32 @@ class KademliaRouting[V: JsonValueCodec](
   }
 
   private def pingRemote(nextHop: InetSocketAddress, targetId: NodeId): Future[Boolean] = {
-    println(s"Pinging remote $nextHop with target $targetId")
+    logger.info(s"Pinging remote $nextHop with target $targetId")
     implicit val x: PingEvent.type = PingEvent
-    val request = createRequest { requestId => PingEvent(requestId, localNodeInfo, targetId) }
-    network.send(nextHop, request).flatMap {
-      case PingAnswerEvent(requestId, success) =>
-        if (requestId != targetId) throw IllegalStateException(s"Received ping answer for incorrect id $requestId instead of $targetId")
-        Future.successful(success)
-      case RedirectEvent(requestId, closerTargetInfo) =>
-        if (requestId != targetId) throw IllegalStateException(s"Received redirect for incorrect id $requestId instead of $targetId")
-        logger.info(s"Redirecting Ping($requestId) to closer target: $closerTargetInfo")
-        pingRemote(closerTargetInfo.address, targetId)
-      case answer => throw IllegalStateException(s"Unexpected answer received: $answer")
-    }
+    val sentRequest = createRequest { requestId => PingEvent(requestId, localNodeInfo, targetId) }
+    network
+      .send(nextHop, sentRequest)
+      .andThen[AnswerEvent[V]] {
+        case Failure(exception) =>
+          logger.error(s"Failed to receive ping request answer", exception)
+          throw exception
+        case Success(value) =>
+          logger.info(s"Received answer to ping request: $value")
+          value
+      }
+      .flatMap[Boolean] {
+        case PingAnswerEvent(requestId, success) =>
+          if (requestId != sentRequest.requestId)
+            throw IllegalStateException(s"Received ping answer for incorrect id $requestId instead of $targetId")
+          logger.info(s"Ping($requestId) returned $success")
+          Future.successful(success)
+        case RedirectEvent(requestId, closerTargetInfo) =>
+          if (requestId != sentRequest.requestId)
+            throw IllegalStateException(s"Received redirect for incorrect id $requestId instead of $targetId")
+          logger.info(s"Redirecting Ping($requestId) to closer target: $closerTargetInfo")
+          pingRemote(closerTargetInfo.address, targetId)
+        case answer => throw IllegalStateException(s"Unexpected answer received: $answer")
+      }
   }
 
   override def ping(targetId: NodeId): Future[Boolean] = {
@@ -175,7 +196,10 @@ class KademliaRouting[V: JsonValueCodec](
           case Some(node) => pingRemote(node.address, targetId)
           case _ =>
             Future
-              .find(getClosest(targetId).map { case NodeInfo(_, ip) => pingRemote(ip, targetId) })(identity)
+              .find(getClosest(targetId).map { case NodeInfo(_, ip) =>
+                logger.info(s"Pinging remote node $ip with target $targetId")
+                pingRemote(ip, targetId)
+              })(identity)
               .map(_.getOrElse(false))
   }
 

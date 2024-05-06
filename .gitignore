@@ -2,6 +2,8 @@
 .bloop
 .metals
 project/project
+logs
+*.log
 
 target/
 !.mvn/wrapper/maven-wrapper.jar
