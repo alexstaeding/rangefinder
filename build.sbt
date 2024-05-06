@@ -21,6 +21,9 @@ lazy val discovery = (project in file("discovery"))
 lazy val cli = (project in file("cli"))
   .settings(
     name := "cli",
+    libraryDependencies ++= Seq(
+      "org.apache.logging.log4j" % "log4j-core" % "2.23.1",
+    ),
   )
   .dependsOn(lib)
 

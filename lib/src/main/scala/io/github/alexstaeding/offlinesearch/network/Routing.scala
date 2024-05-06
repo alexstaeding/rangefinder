@@ -12,7 +12,5 @@ trait Routing[V] {
 
   def findValue(targetId: NodeId): Future[V]
 
-  def startReceiver(): Unit
-
   def putLocal(id: NodeId, value: NodeInfo | V): Boolean
 }

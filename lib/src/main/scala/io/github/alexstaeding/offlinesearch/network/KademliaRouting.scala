@@ -1,27 +1,29 @@
 package io.github.alexstaeding.offlinesearch.network
 
+import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import io.github.alexstaeding.offlinesearch.network.NodeId.DistanceOrdering
+import org.apache.logging.log4j.Logger
 
-import java.net.{InetAddress, InetSocketAddress}
+import java.net.InetSocketAddress
 import java.util
 import java.util.UUID
 import java.util.concurrent.Executors
 import scala.annotation.tailrec
 import scala.collection.mutable
-import scala.concurrent.duration.DurationInt
-import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
 
-class KademliaRouting[V](
-                          private val networkFactory: NetworkAdapter.Factory,
-                          private val idSpace: NodeIdSpace,
-                          private val localNodeInfo: NodeInfo,
-                          private val kMaxSize: Int = 20, // Size of K-Buckets
-                          private val concurrency: Int = 3, // Number of concurrent searches
-)() extends Routing[V] {
-  
-  val network = networkFactory.create(localNodeInfo.address)
+class KademliaRouting[V: JsonValueCodec](
+    private val networkFactory: NetworkAdapter.Factory,
+    private val localNodeInfo: NodeInfo,
+    private val logger: Logger,
+    private val kMaxSize: Int = 20, // Size of K-Buckets
+    private val concurrency: Int = 3, // Number of concurrent searches
+)(using idSpace: NodeIdSpace)
+    extends Routing[V] {
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
+
+  private val network = networkFactory.create(localNodeInfo.address, receive)
 
   private val buckets: mutable.Buffer[KBucket] = new mutable.ArrayDeque[KBucket]
 
@@ -53,26 +55,10 @@ class KademliaRouting[V](
       .collect { case (key, _) if distanceLeadingZeros(key) == partitionIndex => key }
       .foreach { key => destination.put(key, source.remove(key).get) }
 
-  def startReceiver(): Unit = {
-    println("Starting receiver...")
-    ec.submit(new Runnable {
-      override def run(): Unit = {
-        println("Inside receiver")
-        while (true) {
-          println("Waiting...")
-          receive()
-        }
-      }
-    })
-  }
-
-  private def receive(): Unit = {
-    println("In receive")
-    val interceptor = Await.result(env.network.receive(), 20.minutes)
-    println(s"Received: $interceptor")
-    val request = interceptor.request
+  private def receive(request: RequestEvent[V]): AnswerEvent[V] = {
+    println(s"Received: $request")
     putLocal(request.sourceInfo.id, request.sourceInfo)
-    val answer: AnswerEvent[V] = request match
+    request match
       case PingEvent(requestId, sourceInfo, targetId) =>
         getLocalValue(targetId) match
           case Some(value) => PingAnswerEvent(requestId, success = true)
@@ -84,8 +70,6 @@ class KademliaRouting[V](
                   case closest if closest.nonEmpty => RedirectEvent(requestId, closest.head)
                   case _                           => PingAnswerEvent(requestId, success = false)
       case request @ _ => throw IllegalStateException(s"Unexpected request received: $request")
-
-    interceptor.answer(answer)
   }
 
   @tailrec
@@ -167,20 +151,20 @@ class KademliaRouting[V](
     request
   }
 
-  @tailrec
   private def pingRemote(nextHop: InetSocketAddress, targetId: NodeId): Future[Boolean] = {
     println(s"Pinging remote $nextHop with target $targetId")
     implicit val x: PingEvent.type = PingEvent
     val request = createRequest { requestId => PingEvent(requestId, localNodeInfo, targetId) }
-    Await.result(env.network.send(nextHop, request), 2.seconds) match
-      case PingAnswerEvent(id, success) =>
-        if (id != targetId) throw IllegalStateException(s"Received ping answer for incorrect id $id instead of $targetId")
+    network.send(nextHop, request).flatMap {
+      case PingAnswerEvent(requestId, success) =>
+        if (requestId != targetId) throw IllegalStateException(s"Received ping answer for incorrect id $requestId instead of $targetId")
         Future.successful(success)
-      case RedirectEvent(id, closerTargetInfo) =>
-        if (id != targetId) throw IllegalStateException(s"Received redirect for incorrect id $id instead of $targetId")
-        // TODO: Save id?
+      case RedirectEvent(requestId, closerTargetInfo) =>
+        if (requestId != targetId) throw IllegalStateException(s"Received redirect for incorrect id $requestId instead of $targetId")
+        logger.info(s"Redirecting Ping($requestId) to closer target: $closerTargetInfo")
         pingRemote(closerTargetInfo.address, targetId)
-      case answer @ _ => throw IllegalStateException(s"Unexpected answer received: $answer")
+      case answer => throw IllegalStateException(s"Unexpected answer received: $answer")
+    }
   }
 
   override def ping(targetId: NodeId): Future[Boolean] = {

@@ -2,8 +2,9 @@ package io.github.alexstaeding.offlinesearch.app
 
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
-import io.github.alexstaeding.offlinesearch.network.{NodeId, NodeIdSpace, NodeInfo}
+import io.github.alexstaeding.offlinesearch.network.{HttpNetworkAdapter, KademliaRouting, NodeId, NodeIdSpace, NodeInfo}
 import io.github.alexstaeding.offlinesearch.Client
+import org.apache.logging.log4j.LogManager
 
 import java.net.InetSocketAddress
 import scala.io.StdIn
@@ -19,6 +20,7 @@ object AppDT {
 
 @main
 def hello(): Unit = {
+  val logger = LogManager.getLogger("main")
   val x = Random.nextInt(10)
   println(s"Starting client $x")
   val localNodeId = NodeId.generateRandom
@@ -26,11 +28,8 @@ def hello(): Unit = {
   val localNodeInfo = NodeInfo(localNodeId, bindAddress)
   println(s"localNodeId: '${localNodeId.toHex}' bindAddress: $bindAddress")
   println(s"localInfo: ${localNodeId.toHex},${bindAddress.getHostString},${bindAddress.getPort}")
-  val env = Environment[AppDT](idSpace, localNodeInfo)
-
-  val client = Client[AppDT](env)
-  env.routing.startReceiver()
   println("Type ping(id) to send a ping to a node")
+  val routing = new KademliaRouting[AppDT](HttpNetworkAdapter, localNodeInfo, logger)
   while (true) {
     val line = StdIn.readLine()
     line match {
@@ -38,14 +37,14 @@ def hello(): Unit = {
         NodeId.fromHex(id) match
           case Some(nodeId) =>
             println(s"Sending ping to $nodeId")
-            env.routing.ping(nodeId)
+            routing.ping(nodeId)
           case None =>
             println(s"Invalid node id: '$id'")
       case s"putLocalNode($id,$host,$port)" =>
         NodeId.fromHex(id) match
           case Some(nodeId) =>
             println(s"putLocalNode $nodeId")
-            env.routing.putLocal(nodeId, NodeInfo(nodeId, InetSocketAddress(host, port.toInt)))
+            routing.putLocal(nodeId, NodeInfo(nodeId, InetSocketAddress(host, port.toInt)))
           case None =>
             println(s"Invalid input, should be nodeId,host,port: '$line'")
       case _ =>
