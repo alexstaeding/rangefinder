@@ -44,7 +44,7 @@ def hello(): Unit = {
                 case Success(value) =>
                   logger.info(s"Received ping response from $nodeId: $value")
                 case Failure(exception) =>
-                  logger.error(s"Failed to ping $nodeId: $exception")
+                  logger.error(s"Failed to ping $nodeId", exception)
               }(using ExecutionContext.parasitic)
           case None =>
             logger.info(s"Invalid node id: '$id'")

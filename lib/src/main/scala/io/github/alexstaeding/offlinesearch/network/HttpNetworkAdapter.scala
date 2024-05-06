@@ -28,7 +28,7 @@ class HttpNetworkAdapter[V: JsonValueCodec](
       (exchange: HttpExchange) => {
         logger.info("Received message")
         val answer = onReceive(readFromStream(exchange.getRequestBody)(using RequestEvent.codec))
-        val response = writeToString(answer)
+        val response = writeToString(answer)(using AnswerEvent.codec)
         exchange.sendResponseHeaders(200, response.length)
         exchange.getResponseBody.write(response.getBytes)
         exchange.close()

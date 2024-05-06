@@ -33,8 +33,6 @@ class KademliaRouting[V: JsonValueCodec](
 
   private val openRequests: mutable.Map[UUID, RequestEvent[V]] = new mutable.HashMap[UUID, RequestEvent[V]]
 
-  homeBucket.nodes.put(NodeId.zero, localNodeInfo)
-
   private def distanceLeadingZeros(id: NodeId): Int = {
     val distance = localNodeInfo.id.xor(id)
     val firstByte = distance.bytes.indexWhere(_ != 0)
@@ -165,14 +163,6 @@ class KademliaRouting[V: JsonValueCodec](
     val sentRequest = createRequest { requestId => PingEvent(requestId, localNodeInfo, targetId) }
     network
       .send(nextHop, sentRequest)
-      .andThen[AnswerEvent[V]] {
-        case Failure(exception) =>
-          logger.error(s"Failed to receive ping request answer", exception)
-          throw exception
-        case Success(value) =>
-          logger.info(s"Received answer to ping request: $value")
-          value
-      }
       .flatMap[Boolean] {
         case PingAnswerEvent(requestId, success) =>
           if (requestId != sentRequest.requestId)
