@@ -5,12 +5,13 @@ import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 
 import java.util.UUID
 
+/** Represents a message sent by or received from a [[NetworkAdapter]].
+  */
 sealed trait NetworkEvent[V] {
 
   /** Persistent ID for all messages in this communication
     */
   val requestId: UUID
-
 }
 
 sealed trait AnswerEvent[V] extends NetworkEvent[V]
@@ -25,17 +26,16 @@ sealed trait RequestEvent[V] extends NetworkEvent[V] {
   val targetId: NodeId
 }
 
-// TODO: With higher kinded types?
 object NetworkEvent {
-  given codec[V](using JsonValueCodec[V]): JsonValueCodec[NetworkEvent[V]] = JsonCodecMaker.make
+  given codec[V: JsonValueCodec]: JsonValueCodec[NetworkEvent[V]] = JsonCodecMaker.make
 }
 
 object AnswerEvent {
-  given codec[V](using JsonValueCodec[V]): JsonValueCodec[AnswerEvent[V]] = JsonCodecMaker.make
+  given codec[V: JsonValueCodec]: JsonValueCodec[AnswerEvent[V]] = JsonCodecMaker.make
 }
 
 object RequestEvent {
-  given codec[V](using JsonValueCodec[V]): JsonValueCodec[RequestEvent[V]] = JsonCodecMaker.make
+  given codec[V: JsonValueCodec]: JsonValueCodec[RequestEvent[V]] = JsonCodecMaker.make
 }
 
 case class PingEvent[V](
@@ -69,7 +69,3 @@ case class FindValueAnswerEvent[V](override val requestId: UUID, value: Option[V
 case class StoreValueAnswerEvent[V](override val requestId: UUID, success: Boolean) extends AnswerEvent[V]
 
 case class RedirectEvent[V](override val requestId: UUID, closerTargetInfo: NodeInfo) extends AnswerEvent[V]
-
-object RedirectEvent {
-  given codec[V](using JsonValueCodec[V]): JsonValueCodec[RedirectEvent[V]] = JsonCodecMaker.make
-}

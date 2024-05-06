@@ -11,7 +11,7 @@ import java.util.concurrent.Executors
 import scala.annotation.tailrec
 import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Success}
 
 class KademliaRouting[V: JsonValueCodec](
     private val networkFactory: NetworkAdapter.Factory,
@@ -186,10 +186,17 @@ class KademliaRouting[V: JsonValueCodec](
           case Some(node) => pingRemote(node.address, targetId)
           case _ =>
             Future
-              .find(getClosest(targetId).map { case NodeInfo(_, ip) =>
-                logger.info(s"Pinging remote node $ip with target $targetId")
-                pingRemote(ip, targetId)
-              })(identity)
+              .find(
+                getClosest(targetId)
+                  .map {
+                    case nodeInfo@NodeInfo(_, ip) =>
+                      pingRemote(ip, targetId).andThen {
+                        case Failure(exception) =>
+                          logger.error(s"Failed to send remote ping $nodeInfo", exception)
+                          false
+                      }
+                  },
+              )(identity)
               .map(_.getOrElse(false))
   }
 
