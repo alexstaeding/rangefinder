@@ -14,8 +14,16 @@ sealed trait NetworkEvent[V] {
   val requestId: UUID
 }
 
-sealed trait AnswerEvent[V] extends NetworkEvent[V]
-sealed trait RequestEvent[V] extends NetworkEvent[V] {
+sealed trait AnswerEvent[V, C] extends NetworkEvent[V] {
+  val content: C
+}
+
+sealed trait OptionAnswerEvent[V] extends AnswerEvent[V, Option[V]]
+sealed trait BooleanAnswerEvent[V] extends AnswerEvent[V, Boolean]
+
+sealed trait RequestEvent[V, C, A <: AnswerEvent[V, C]] extends NetworkEvent[V] {
+
+  type Answer = Either[RedirectEvent[V], A]
 
   /** The ID of the node that sent this message
     */
@@ -24,6 +32,10 @@ sealed trait RequestEvent[V] extends NetworkEvent[V] {
   /** The ID of the node that being searched
     */
   val targetId: NodeId
+
+  def createAnswer(content: C): Right[RedirectEvent[V], A]
+
+  def createRedirect(closerTargetInfo: NodeInfo): Left[RedirectEvent[V], A] = Left(RedirectEvent(requestId, closerTargetInfo))
 }
 
 object NetworkEvent {
@@ -31,41 +43,65 @@ object NetworkEvent {
 }
 
 object AnswerEvent {
-  given codec[V: JsonValueCodec]: JsonValueCodec[AnswerEvent[V]] = JsonCodecMaker.make
+  given codec[V: JsonValueCodec, C]: JsonValueCodec[AnswerEvent[V, C]] = JsonCodecMaker.make
 }
 
 object RequestEvent {
-  given codec[V: JsonValueCodec]: JsonValueCodec[RequestEvent[V]] = JsonCodecMaker.make
+  given codec[V: JsonValueCodec, C, A <: AnswerEvent[V, C]]: JsonValueCodec[RequestEvent[V, C, A]] = JsonCodecMaker.make
+
+  def createPing[V](localNodeInfo: NodeInfo, targetId: NodeId): PingEvent[V] =
+    PingEvent[V](UUID.randomUUID(), localNodeInfo, targetId)
+
+  def createFindNode[V](localNodeInfo: NodeInfo, targetId: NodeId): FindNodeEvent[V] =
+    FindNodeEvent[V](UUID.randomUUID(), localNodeInfo, targetId)
+
+  def createFindValue[V](localNodeInfo: NodeInfo, targetId: NodeId): FindValueEvent[V] =
+    FindValueEvent[V](UUID.randomUUID(), localNodeInfo, targetId)
+
+  def createStoreValue[V](localNodeInfo: NodeInfo, targetId: NodeId, value: V): StoreValueEvent[V] =
+    StoreValueEvent[V](UUID.randomUUID(), localNodeInfo, targetId, value)
 }
 
 case class PingEvent[V](
     override val requestId: UUID,
     override val sourceInfo: NodeInfo,
     override val targetId: NodeId,
-) extends RequestEvent[V]
+) extends RequestEvent[V, Boolean, PingAnswerEvent[V]] {
+  override def createAnswer(content: Boolean): Right[RedirectEvent[V], PingAnswerEvent[V]] =
+    Right(PingAnswerEvent(requestId, content))
+}
 
 case class FindNodeEvent[V](
     override val requestId: UUID,
     override val sourceInfo: NodeInfo,
     override val targetId: NodeId,
-) extends RequestEvent[V]
+) extends RequestEvent[V, Boolean, FindNodeAnswerEvent[V]] {
+  override def createAnswer(content: Boolean): Right[RedirectEvent[V], FindNodeAnswerEvent[V]] =
+    Right(FindNodeAnswerEvent(requestId, content))
+}
 
 case class FindValueEvent[V](
     override val requestId: UUID,
     override val sourceInfo: NodeInfo,
     override val targetId: NodeId,
-) extends RequestEvent[V]
+) extends RequestEvent[V, Option[V], FindValueAnswerEvent[V]] {
+  override def createAnswer(content: Option[V]): Right[RedirectEvent[V], FindValueAnswerEvent[V]] =
+    Right(FindValueAnswerEvent(requestId, content))
+}
 
 case class StoreValueEvent[V](
     override val requestId: UUID,
     override val sourceInfo: NodeInfo,
     override val targetId: NodeId,
     value: V,
-) extends RequestEvent[V]
+) extends RequestEvent[V, Boolean, StoreValueAnswerEvent[V]] {
+  override def createAnswer(content: Boolean): Right[RedirectEvent[V], StoreValueAnswerEvent[V]] =
+    Right(StoreValueAnswerEvent(requestId, content))
+}
 
-case class PingAnswerEvent[V](override val requestId: UUID, success: Boolean) extends AnswerEvent[V]
-case class FindNodeAnswerEvent[V](override val requestId: UUID, success: Boolean) extends AnswerEvent[V]
-case class FindValueAnswerEvent[V](override val requestId: UUID, value: Option[V]) extends AnswerEvent[V]
-case class StoreValueAnswerEvent[V](override val requestId: UUID, success: Boolean) extends AnswerEvent[V]
+case class PingAnswerEvent[V](override val requestId: UUID, override val content: Boolean) extends BooleanAnswerEvent[V]
+case class FindNodeAnswerEvent[V](override val requestId: UUID, override val content: Boolean) extends BooleanAnswerEvent[V]
+case class FindValueAnswerEvent[V](override val requestId: UUID, override val content: Option[V]) extends OptionAnswerEvent[V]
+case class StoreValueAnswerEvent[V](override val requestId: UUID, override val content: Boolean) extends BooleanAnswerEvent[V]
 
-case class RedirectEvent[V](override val requestId: UUID, closerTargetInfo: NodeInfo) extends AnswerEvent[V]
+case class RedirectEvent[V](override val requestId: UUID, closerTargetInfo: NodeInfo) extends AnswerEvent[V, Nothing]
