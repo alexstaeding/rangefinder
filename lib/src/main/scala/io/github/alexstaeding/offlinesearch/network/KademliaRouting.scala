@@ -125,9 +125,6 @@ class KademliaRouting[V: JsonValueCodec](
     }
   }
 
-  def putLocalNode(id: NodeId, nodeInfo: NodeInfo): Boolean = putLocal(id, Left(nodeInfo))
-  def putLocalValue(id: NodeId, value: V): Boolean = putLocal(id, Right(value))
-
   override def putLocal(id: NodeId, value: Either[NodeInfo, V]): Boolean = {
     val index = distanceLeadingZeros(id)
     ensureBucketSpace(index) match {
@@ -178,7 +175,7 @@ class KademliaRouting[V: JsonValueCodec](
     def hasSpace: Boolean = !isFull
   }
 
-  private def remoteCall[C, R <: RequestEvent[V, C]](
+  private def remoteCall[C, A <: AnswerEvent[V] { type Content <: C },R <: RequestEvent[V] { type Answer <: A}](
       nextHopAddress: InetSocketAddress,
       originator: R,
   ): Future[C] = {
@@ -230,9 +227,9 @@ class KademliaRouting[V: JsonValueCodec](
 
   override def findNode(targetId: NodeId): Future[NodeInfo] = ???
 
-  override def findValue(targetId: NodeId): Future[V] = {
+  override def findValue(targetId: NodeId): Future[Option[V]] = {
     getLocalValue(targetId) match
-      case Some(value) => Future.successful(value)
+      case Some(value) => Future.successful(Some(value))
       case None =>
         Future
           .find(getClosest(targetId).map { case nodeInfo @ NodeInfo(_, address) =>
@@ -241,6 +238,6 @@ class KademliaRouting[V: JsonValueCodec](
               None
             }
           })(_.isDefined)
-          .map(_.flatten.get)
+          .map(_.flatten)
   }
 }

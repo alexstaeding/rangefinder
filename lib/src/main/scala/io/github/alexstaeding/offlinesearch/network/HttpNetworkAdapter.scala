@@ -27,7 +27,7 @@ class HttpNetworkAdapter[V: JsonValueCodec](
       "/api/v1/message",
       (exchange: HttpExchange) => {
         logger.info("Received message")
-        val eventAnswer: Either[RedirectEvent[V], AnswerEvent[V, _]] =
+        val eventAnswer: Either[RedirectEvent[V], AnswerEvent[V]] =
           readFromStream(exchange.getRequestBody)(using RequestEvent.codec) match
             case pingEvent: PingEvent[V]             => onReceive.receivePing(pingEvent)
             case findNodeEvent: FindNodeEvent[V]     => onReceive.receiveFindNode(findNodeEvent)
@@ -48,7 +48,7 @@ class HttpNetworkAdapter[V: JsonValueCodec](
     logger.info("Started server on " + bindAddress)
   }
 
-  override def send[C, A <: AnswerEvent[V, C], R <: RequestEvent[V, C] { type Answer <: A }](
+  override def send[A <: AnswerEvent[V], R <: RequestEvent[V] { type Answer <: A }](
       nextHop: InetSocketAddress,
       event: R,
   ): Future[Either[RedirectEvent[V], A]] = {
@@ -63,14 +63,14 @@ class HttpNetworkAdapter[V: JsonValueCodec](
       .thenApply { response => readFromString(response.body())(using AnswerEvent.codec) }
       .thenApply {
         case redirect: RedirectEvent[V] => Left(redirect)
-        case answer: A                  => Right(answer)
+        case answer                  => Right(answer.asInstanceOf[A])
       }
       .asScala
   }
 }
 
 object HttpNetworkAdapter extends NetworkAdapter.Factory {
-  def create[V: JsonValueCodec, C, R <: RequestEvent[V, C]](
+  def create[V: JsonValueCodec](
       bindAddress: InetSocketAddress,
       onReceive: EventReceiver[V],
   )(using logger: Logger): NetworkAdapter[V] = HttpNetworkAdapter(bindAddress, onReceive)

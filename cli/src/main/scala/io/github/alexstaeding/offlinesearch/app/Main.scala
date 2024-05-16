@@ -52,7 +52,7 @@ def hello(): Unit = {
         NodeId.fromHex(id) match
           case Some(nodeId) =>
             logger.info(s"putLocalNode $nodeId")
-            routing.putLocal(nodeId, NodeInfo(nodeId, InetSocketAddress(host, port.toInt)))
+            routing.putLocalNode(nodeId, NodeInfo(nodeId, InetSocketAddress(host, port.toInt)))
           case None =>
             logger.info(s"Invalid input, should be nodeId,host,port: '$line'")
       case _ =>

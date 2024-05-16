@@ -12,5 +12,9 @@ trait Routing[V] {
 
   def findValue(targetId: NodeId): Future[Option[V]]
 
+  def putLocalNode(id: NodeId, nodeInfo: NodeInfo): Boolean = putLocal(id, Left(nodeInfo))
+
+  def putLocalValue(id: NodeId, value: V): Boolean = putLocal(id, Right(value))
+
   def putLocal(id: NodeId, value: Either[NodeInfo, V]): Boolean
 }

@@ -7,7 +7,7 @@ import java.net.InetSocketAddress
 import scala.concurrent.Future
 
 trait NetworkAdapter[V] {
-  def send[C, A <: AnswerEvent[V, C], R <: RequestEvent[V, C] { type Answer <: A }](
+  def send[A <: AnswerEvent[V], R <: RequestEvent[V] { type Answer <: A }](
       nextHop: InetSocketAddress,
       event: R,
   ): Future[Either[RedirectEvent[V], A]]
