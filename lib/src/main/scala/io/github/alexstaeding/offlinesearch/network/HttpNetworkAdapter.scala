@@ -26,9 +26,9 @@ class HttpNetworkAdapter[V: JsonValueCodec](
     server.createContext(
       "/api/v1/message",
       (exchange: HttpExchange) => {
-        logger.info("Received message")
+        val request = readFromStream(exchange.getRequestBody)(using RequestEvent.codec)
         val eventAnswer: Either[RedirectEvent[V], AnswerEvent[V]] =
-          readFromStream(exchange.getRequestBody)(using RequestEvent.codec) match
+           request match
             case pingEvent: PingEvent[V]             => onReceive.receivePing(pingEvent)
             case findNodeEvent: FindNodeEvent[V]     => onReceive.receiveFindNode(findNodeEvent)
             case findValueEvent: FindValueEvent[V]   => onReceive.receiveFindValue(findValueEvent)
@@ -37,6 +37,8 @@ class HttpNetworkAdapter[V: JsonValueCodec](
         val response = eventAnswer match
           case Left(redirect) => writeToString(redirect)(using AnswerEvent.codec)
           case Right(answer)  => writeToString(answer)(using AnswerEvent.codec)
+
+        logger.info(s"Received message $request and sending response $eventAnswer")
 
         exchange.sendResponseHeaders(200, response.length)
         exchange.getResponseBody.write(response.getBytes)
