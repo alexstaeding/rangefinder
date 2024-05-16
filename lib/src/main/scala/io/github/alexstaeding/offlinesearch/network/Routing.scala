@@ -6,7 +6,7 @@ trait Routing[V] {
 
   def ping(targetId: NodeId): Future[Boolean]
 
-  def store(targetId: NodeId, value: V): Future[Boolean]
+  def store(value: V)(using HashingAlgorithm[V]): Future[Boolean]
 
   def findNode(targetId: NodeId): Future[NodeInfo]
 

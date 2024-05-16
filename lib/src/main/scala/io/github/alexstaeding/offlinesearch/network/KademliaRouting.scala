@@ -6,7 +6,6 @@ import org.apache.logging.log4j.Logger
 
 import java.net.InetSocketAddress
 import java.util
-import java.util.UUID
 import java.util.concurrent.Executors
 import scala.annotation.tailrec
 import scala.collection.mutable
@@ -175,7 +174,7 @@ class KademliaRouting[V: JsonValueCodec](
     def hasSpace: Boolean = !isFull
   }
 
-  private def remoteCall[C, A <: AnswerEvent[V] { type Content <: C },R <: RequestEvent[V] { type Answer <: A}](
+  private def remoteCall[C, A <: AnswerEvent[V] { type Content <: C }, R <: RequestEvent[V] { type Answer <: A }](
       nextHopAddress: InetSocketAddress,
       originator: R,
   ): Future[C] = {
@@ -215,7 +214,9 @@ class KademliaRouting[V: JsonValueCodec](
               .map(_.getOrElse(false))
   }
 
-  override def store(targetId: NodeId, value: V): Future[Boolean] =
+  override def store(value: V)(using hashingAlgorithm: HashingAlgorithm[V]): Future[Boolean] = {
+    val targetId = hashingAlgorithm.hash(value)
+    logger.info(s"Determined hash for value $value -> ${targetId.toHex}")
     Future
       .find(getClosest(targetId).map { case nodeInfo @ NodeInfo(_, address) =>
         remoteCall(address, RequestEvent.createStoreValue(localNodeInfo, targetId, value)).recover { exception =>
@@ -224,6 +225,7 @@ class KademliaRouting[V: JsonValueCodec](
         }
       })(identity)
       .map(_.getOrElse(false))
+  }
 
   override def findNode(targetId: NodeId): Future[NodeInfo] = ???
 
