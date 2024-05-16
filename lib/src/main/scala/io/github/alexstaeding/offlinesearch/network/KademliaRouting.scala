@@ -151,12 +151,12 @@ class KademliaRouting[V: JsonValueCodec](
   }
 
   private def remoteCall[C, A <: AnswerEvent[V, C], R <: RequestEvent[V, C, A]](
-      nextHop: InetSocketAddress,
+      nextHopAddress: InetSocketAddress,
       originator: R,
   ): Future[C] = {
-    logger.info(s"Sending RPC to $nextHop with target ${originator.targetId}")
+    logger.info(s"Sending RPC to $nextHopAddress with target ${originator.targetId}")
     network
-      .send(nextHop, originator)
+      .send(nextHopAddress, originator)
       .map { answer =>
         val answerId = answer match
           case Left(value)  => value.requestId
@@ -183,14 +183,21 @@ class KademliaRouting[V: JsonValueCodec](
             Future
               .find(getClosest(targetId).map { case nodeInfo @ NodeInfo(_, address) =>
                 remoteCall(address, RequestEvent.createPing(localNodeInfo, targetId)).recover { exception =>
-                  logger.error(s"Failed to send remote ping $nodeInfo", exception)
+                  logger.error(s"Failed to send remote ping to $nodeInfo", exception)
                   false
                 }
               })(identity)
               .map(_.getOrElse(false))
   }
 
-  override def store(targetId: NodeId, value: V): Future[Boolean] = ???
+  override def store(targetId: NodeId, value: V): Future[Boolean] = {
+    getClosest(targetId).map { case nodeInfo @ NodeInfo(_, address) =>
+      remoteCall(address, RequestEvent.createStoreValue(localNodeInfo, targetId, value)).recover { exception =>
+        logger.error(s"Failed to send remote storeValue to $nodeInfo", exception)
+        false
+      }
+    }
+  }
 
   override def findNode(targetId: NodeId): Future[NodeInfo] = ???
 
@@ -199,8 +206,8 @@ class KademliaRouting[V: JsonValueCodec](
       case Some(value) => Future.successful(value)
       case None =>
         Future
-          .find(getClosest(targetId).map { case nodeInfo @ NodeInfo(_, ip) =>
-            remoteCall(ip, RequestEvent.createFindValue(localNodeInfo, targetId)).recover { exception =>
+          .find(getClosest(targetId).map { case nodeInfo @ NodeInfo(_, address) =>
+            remoteCall(address, RequestEvent.createFindValue(localNodeInfo, targetId)).recover { exception =>
               logger.error(s"Failed to send remote findValue $nodeInfo", exception)
               None
             }
