@@ -14,7 +14,7 @@ import scala.jdk.FutureConverters.CompletionStageOps
 
 class HttpNetworkAdapter[V: JsonValueCodec](
     private val bindAddress: InetSocketAddress,
-    private val onReceive: RequestEvent[V] => AnswerEvent[V],
+    private val onReceive: EventReceiver[V],
 )(using logger: Logger)
     extends NetworkAdapter[V] {
 
@@ -27,8 +27,17 @@ class HttpNetworkAdapter[V: JsonValueCodec](
       "/api/v1/message",
       (exchange: HttpExchange) => {
         logger.info("Received message")
-        val answer = onReceive(readFromStream(exchange.getRequestBody)(using RequestEvent.codec))
-        val response = writeToString(answer)(using AnswerEvent.codec)
+        val eventAnswer: Either[RedirectEvent[V], AnswerEvent[V, _]] =
+          readFromStream(exchange.getRequestBody)(using RequestEvent.codec) match
+            case pingEvent: PingEvent[V]             => onReceive.receivePing(pingEvent)
+            case findNodeEvent: FindNodeEvent[V]     => onReceive.receiveFindNode(findNodeEvent)
+            case findValueEvent: FindValueEvent[V]   => onReceive.receiveFindValue(findValueEvent)
+            case storeValueEvent: StoreValueEvent[V] => onReceive.receiveStoreValue(storeValueEvent)
+
+        val response = eventAnswer match
+          case Left(redirect) => writeToString(redirect)(using AnswerEvent.codec)
+          case Right(answer)  => writeToString(answer)(using AnswerEvent.codec)
+
         exchange.sendResponseHeaders(200, response.length)
         exchange.getResponseBody.write(response.getBytes)
         exchange.close()
@@ -39,7 +48,10 @@ class HttpNetworkAdapter[V: JsonValueCodec](
     logger.info("Started server on " + bindAddress)
   }
 
-  override def send(nextHop: InetSocketAddress, event: RequestEvent[V]): Future[AnswerEvent[V]] = {
+  override def send[C, A <: AnswerEvent[V, C], R <: RequestEvent[V, C] { type Answer <: A }](
+      nextHop: InetSocketAddress,
+      event: R,
+  ): Future[Either[RedirectEvent[V], A]] = {
     val request = HttpRequest
       .newBuilder()
       .uri(URI.create(s"http://${nextHop.getAddress.getHostAddress}:${nextHop.getPort}/api/v1/message"))
@@ -49,13 +61,17 @@ class HttpNetworkAdapter[V: JsonValueCodec](
     client
       .sendAsync(request, BodyHandlers.ofString())
       .thenApply { response => readFromString(response.body())(using AnswerEvent.codec) }
+      .thenApply {
+        case redirect: RedirectEvent[V] => Left(redirect)
+        case answer: A                  => Right(answer)
+      }
       .asScala
   }
 }
 
 object HttpNetworkAdapter extends NetworkAdapter.Factory {
-  override def create[V: JsonValueCodec](
+  def create[V: JsonValueCodec, C, R <: RequestEvent[V, C]](
       bindAddress: InetSocketAddress,
-      onReceive: RequestEvent[V] => AnswerEvent[V],
+      onReceive: EventReceiver[V],
   )(using logger: Logger): NetworkAdapter[V] = HttpNetworkAdapter(bindAddress, onReceive)
 }

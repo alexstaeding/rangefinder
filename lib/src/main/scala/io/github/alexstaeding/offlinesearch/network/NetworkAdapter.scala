@@ -7,14 +7,24 @@ import java.net.InetSocketAddress
 import scala.concurrent.Future
 
 trait NetworkAdapter[V] {
-  def send[C, A <: AnswerEvent[V, C], R <: RequestEvent[V, C, A]](nextHop: InetSocketAddress, event: R): Future[R#Answer]
+  def send[C, A <: AnswerEvent[V, C], R <: RequestEvent[V, C] { type Answer <: A }](
+      nextHop: InetSocketAddress,
+      event: R,
+  ): Future[Either[RedirectEvent[V], A]]
 }
 
 object NetworkAdapter {
   trait Factory {
-    def create[V: JsonValueCodec, C, A <: AnswerEvent[V, C], R <: RequestEvent[V, C, A]](
+    def create[V: JsonValueCodec](
         bindAddress: InetSocketAddress,
-        onReceive: R => R#Answer,
+        onReceive: EventReceiver[V],
     )(using logger: Logger): NetworkAdapter[V]
   }
+}
+
+trait EventReceiver[V] {
+  def receivePing(request: PingEvent[V]): Either[RedirectEvent[V], PingAnswerEvent[V]]
+  def receiveFindNode(request: FindNodeEvent[V]): Either[RedirectEvent[V], FindNodeAnswerEvent[V]]
+  def receiveFindValue(request: FindValueEvent[V]): Either[RedirectEvent[V], FindValueAnswerEvent[V]]
+  def receiveStoreValue(request: StoreValueEvent[V]): Either[RedirectEvent[V], StoreValueAnswerEvent[V]]
 }

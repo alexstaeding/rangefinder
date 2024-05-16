@@ -22,7 +22,7 @@ class KademliaRouting[V: JsonValueCodec](
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 
-  private val network = networkFactory.create(localNodeInfo.address, receive)
+  private val network = networkFactory.create(localNodeInfo.address, KademliaEventReceiver)
 
   private val buckets: mutable.Buffer[KBucket] = new mutable.ArrayDeque[KBucket]
 
@@ -52,29 +52,54 @@ class KademliaRouting[V: JsonValueCodec](
       .collect { case (key, _) if distanceLeadingZeros(key) == partitionIndex => key }
       .foreach { key => destination.put(key, source.remove(key).get) }
 
-  private def receive[C, A <: AnswerEvent[V, C], R <: RequestEvent[V, C, A]](request: R): R#Answer = {
-    logger.info(s"Received: $request")
-    putLocal(request.sourceInfo.id, request.sourceInfo)
-    val answer: R#Answer = request match
-      case ping @ PingEvent(_, _, _) => receivePing(ping)
-      case request @ _               => throw IllegalStateException(s"Unexpected request received: $request")
-    logger.info(s"Answering: $answer")
-    answer
-  }
+  private object KademliaEventReceiver extends EventReceiver[V] {
+    override def receivePing(request: PingEvent[V]): Either[RedirectEvent[V], PingAnswerEvent[V]] = {
+      putLocalNode(request.sourceInfo.id, request.sourceInfo)
+      if (request.targetId == localNodeInfo.id) {
+        request.createAnswer(true)
+      } else {
+        getLocalValue(request.targetId) match
+          case Some(value) => request.createAnswer(true)
+          case None =>
+            getLocalNode(request.targetId) match
+              case Some(nodeInfo) => request.createRedirect(nodeInfo)
+              case None =>
+                getClosestBetterThan(request.targetId, localNodeInfo.id) match
+                  case closest if closest.nonEmpty => request.createRedirect(closest.head)
+                  case _                           => request.createAnswer(false)
+      }
+    }
 
-  private def receivePing(request: PingEvent[V]): PingEvent[V]#Answer = {
-    if (request.targetId == localNodeInfo.id) {
-      request.createAnswer(true)
-    } else {
+    override def receiveFindNode(request: FindNodeEvent[V]): Either[RedirectEvent[V], FindNodeAnswerEvent[V]] = {
+      putLocalNode(request.sourceInfo.id, request.sourceInfo)
+      if (request.targetId == localNodeInfo.id) {
+        request.createAnswer(true)
+      } else {
+        getLocalNode(request.targetId) match
+          case Some(_) => request.createAnswer(true)
+          case None =>
+            getClosestBetterThan(request.targetId, localNodeInfo.id) match
+              case closest if closest.nonEmpty => request.createRedirect(closest.head)
+              case _                           => request.createAnswer(false)
+      }
+    }
+
+    override def receiveFindValue(request: FindValueEvent[V]): Either[RedirectEvent[V], FindValueAnswerEvent[V]] = {
+      putLocalNode(request.sourceInfo.id, request.sourceInfo)
       getLocalValue(request.targetId) match
-        case Some(value) => request.createAnswer(true)
+        case Some(value) => request.createAnswer(Some(value))
         case None =>
-          getLocalNode(request.targetId) match
-            case Some(nodeInfo) => request.createRedirect(nodeInfo)
-            case None =>
-              getClosestBetterThan(request.targetId, localNodeInfo.id) match
-                case closest if closest.nonEmpty => request.createRedirect(closest.head)
-                case _                           => request.createAnswer(false)
+          getClosestBetterThan(request.targetId, localNodeInfo.id) match
+            case closest if closest.nonEmpty => request.createRedirect(closest.head)
+            case _                           => request.createAnswer(None)
+    }
+
+    override def receiveStoreValue(request: StoreValueEvent[V]): Either[RedirectEvent[V], StoreValueAnswerEvent[V]] = {
+      putLocalNode(request.sourceInfo.id, request.sourceInfo)
+      val localSuccess = putLocalValue(request.targetId, request.value)
+      getClosestBetterThan(request.targetId, localNodeInfo.id) match
+        case closest if closest.nonEmpty => request.createRedirect(closest.head)
+        case _                           => request.createAnswer(localSuccess)
     }
   }
 
@@ -100,13 +125,16 @@ class KademliaRouting[V: JsonValueCodec](
     }
   }
 
-  override def putLocal(id: NodeId, value: NodeInfo | V): Boolean = {
+  def putLocalNode(id: NodeId, nodeInfo: NodeInfo): Boolean = putLocal(id, Left(nodeInfo))
+  def putLocalValue(id: NodeId, value: V): Boolean = putLocal(id, Right(value))
+
+  override def putLocal(id: NodeId, value: Either[NodeInfo, V]): Boolean = {
     val index = distanceLeadingZeros(id)
     ensureBucketSpace(index) match {
       case Some(bucket) => {
         value match
-          case nodeInfo @ NodeInfo(_, _) => bucket.nodes.put(id, nodeInfo)
-          case _                         => bucket.values.put(id, value.asInstanceOf[V])
+          case Right(value)   => bucket.values.put(id, value)
+          case Left(nodeInfo) => bucket.nodes.put(id, nodeInfo)
         true
       }
       case None => false
@@ -150,7 +178,7 @@ class KademliaRouting[V: JsonValueCodec](
     def hasSpace: Boolean = !isFull
   }
 
-  private def remoteCall[C, A <: AnswerEvent[V, C], R <: RequestEvent[V, C, A]](
+  private def remoteCall[C, R <: RequestEvent[V, C]](
       nextHopAddress: InetSocketAddress,
       originator: R,
   ): Future[C] = {
@@ -190,14 +218,15 @@ class KademliaRouting[V: JsonValueCodec](
               .map(_.getOrElse(false))
   }
 
-  override def store(targetId: NodeId, value: V): Future[Boolean] = {
-    getClosest(targetId).map { case nodeInfo @ NodeInfo(_, address) =>
-      remoteCall(address, RequestEvent.createStoreValue(localNodeInfo, targetId, value)).recover { exception =>
-        logger.error(s"Failed to send remote storeValue to $nodeInfo", exception)
-        false
-      }
-    }
-  }
+  override def store(targetId: NodeId, value: V): Future[Boolean] =
+    Future
+      .find(getClosest(targetId).map { case nodeInfo @ NodeInfo(_, address) =>
+        remoteCall(address, RequestEvent.createStoreValue(localNodeInfo, targetId, value)).recover { exception =>
+          logger.error(s"Failed to send remote storeValue to $nodeInfo", exception)
+          false
+        }
+      })(identity)
+      .map(_.getOrElse(false))
 
   override def findNode(targetId: NodeId): Future[NodeInfo] = ???
 
@@ -211,6 +240,7 @@ class KademliaRouting[V: JsonValueCodec](
               logger.error(s"Failed to send remote findValue $nodeInfo", exception)
               None
             }
-          })(_.isDefined).map(_.flatten.get)
+          })(_.isDefined)
+          .map(_.flatten.get)
   }
 }
