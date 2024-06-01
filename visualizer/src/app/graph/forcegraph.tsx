@@ -5,12 +5,15 @@ import * as d3 from 'd3';
 import {SimulationNodeDatum} from "d3-force";
 import {Data, Link, Node} from './data';
 
-const ForceGraph: React.FC<Data> = ({nodes, links}) => {
-  const svgRef = useRef<SVGSVGElement>(null);
-  const width = 928;
-  const height = 680;
-  useEffect(() => {
+interface ForceGraphProps extends Data {
+  onNodeClick: (node: Node) => void;
+}
 
+const ForceGraph: React.FC<ForceGraphProps> = ({nodes, links, onNodeClick }) => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const width = 1200;
+  const height = 800;
+  useEffect(() => {
     const color = d3.scaleOrdinal(d3.schemeCategory10);
 
     const svg = d3.select(svgRef.current)
@@ -21,8 +24,8 @@ const ForceGraph: React.FC<Data> = ({nodes, links}) => {
     svg.selectAll('*').remove();
 
     const simulation = d3.forceSimulation<Node, Link>(nodes)
-      .force('link', d3.forceLink<Node, Link>(links).id(d => d.id).distance(100))
-      .force('charge', d3.forceManyBody().strength(-300))
+      .force('link', d3.forceLink<Node, Link>(links).id(d => d.id).distance(200))
+      .force('charge', d3.forceManyBody().strength(-800))
       .force('x', d3.forceX())
       .force('y', d3.forceY());
 
@@ -35,12 +38,18 @@ const ForceGraph: React.FC<Data> = ({nodes, links}) => {
       .attr('stroke-width', d => Math.sqrt(d.value));
 
     const node = svg.append('g')
-      .attr('stroke', '#fff')
-      .attr('stroke-width', 1.5)
       .selectAll('circle')
       .data(nodes)
       .join('circle')
-      .attr('r', 10)
+      .attr('stroke', '#fff')
+      .attr('stroke-width', 1.5)
+      .attr('r', 25)
+      .on('click', (event, d) => {
+        onNodeClick(d);
+        d3.select(event.target)
+          .attr('stroke-width', 6)
+          .attr('stroke', '#aff');
+      })
       .attr('fill', d => color(d.group));
 
     node.append('title')
@@ -84,7 +93,7 @@ const ForceGraph: React.FC<Data> = ({nodes, links}) => {
     return () => {
       simulation.stop();
     };
-  }, [nodes, links]);
+  }, [nodes, links, onNodeClick]);
 
   return <svg ref={svgRef} width={width} height={height}></svg>;
 };
