@@ -4,6 +4,7 @@ import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
 import org.apache.logging.log4j.Logger
 
+import java.net.http.HttpClient.Version
 import java.net.http.HttpRequest.BodyPublishers
 import java.net.http.HttpResponse.BodyHandlers
 import java.net.http.{HttpClient, HttpRequest, HttpResponse}
@@ -14,6 +15,7 @@ import scala.jdk.FutureConverters.CompletionStageOps
 
 class HttpNetworkAdapter[V: JsonValueCodec](
     private val bindAddress: InetSocketAddress,
+    private val observerAddress: InetSocketAddress,
     private val onReceive: EventReceiver[V],
 )(using logger: Logger)
     extends NetworkAdapter[V] {
@@ -28,7 +30,7 @@ class HttpNetworkAdapter[V: JsonValueCodec](
       (exchange: HttpExchange) => {
         val request = readFromStream(exchange.getRequestBody)(using RequestEvent.codec)
         val eventAnswer: Either[RedirectEvent[V], AnswerEvent[V]] =
-           request match
+          request match
             case pingEvent: PingEvent[V]             => onReceive.receivePing(pingEvent)
             case findNodeEvent: FindNodeEvent[V]     => onReceive.receiveFindNode(findNodeEvent)
             case findValueEvent: FindValueEvent[V]   => onReceive.receiveFindValue(findValueEvent)
@@ -56,6 +58,7 @@ class HttpNetworkAdapter[V: JsonValueCodec](
   ): Future[Either[RedirectEvent[V], A]] = {
     val request = HttpRequest
       .newBuilder()
+      .version(Version.HTTP_1_1)
       .uri(URI.create(s"http://${nextHop.getAddress.getHostAddress}:${nextHop.getPort}/api/v1/message"))
       .POST(BodyPublishers.ofString(writeToString(event)(using RequestEvent.codec)))
       .build()
@@ -65,15 +68,32 @@ class HttpNetworkAdapter[V: JsonValueCodec](
       .thenApply { response => readFromString(response.body())(using AnswerEvent.codec) }
       .thenApply {
         case redirect: RedirectEvent[V] => Left(redirect)
-        case answer                  => Right(answer.asInstanceOf[A])
+        case answer                     => Right(answer.asInstanceOf[A])
       }
       .asScala
+  }
+
+  override def sendObserverUpdate(update: NodeInfoUpdate): Boolean = {
+    val serializedUpdate = writeToString(update)
+    logger.info(s"Sending observer update $serializedUpdate")
+    val request = HttpRequest
+      .newBuilder()
+      .version(Version.HTTP_1_1)
+      .uri(URI.create(s"http://${observerAddress.getAddress.getHostAddress}:${observerAddress.getPort}/api/node"))
+      .header("Content-Type", "application/json")
+      .PUT(BodyPublishers.ofString(serializedUpdate))
+      .build()
+
+    logger.info(s"Request: $request")
+
+    client.send(request, BodyHandlers.ofString()).statusCode() == 200
   }
 }
 
 object HttpNetworkAdapter extends NetworkAdapter.Factory {
   def create[V: JsonValueCodec](
       bindAddress: InetSocketAddress,
+      observerAddress: InetSocketAddress,
       onReceive: EventReceiver[V],
-  )(using logger: Logger): NetworkAdapter[V] = HttpNetworkAdapter(bindAddress, onReceive)
+  )(using logger: Logger): NetworkAdapter[V] = HttpNetworkAdapter(bindAddress, observerAddress, onReceive)
 }

@@ -35,7 +35,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({nodes, links, onNodeClick }) => 
       .selectAll('line')
       .data(links)
       .join('line')
-      .attr('stroke-width', d => Math.sqrt(d.value));
+      // .attr('stroke-width', d => Math.sqrt(d.value)); // TODO: d.kbucket?
 
     const node = svg.append('g')
       .selectAll('circle')
@@ -50,7 +50,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({nodes, links, onNodeClick }) => 
           .attr('stroke-width', 6)
           .attr('stroke', '#aff');
       })
-      .attr('fill', d => color(d.group));
+      .attr('fill', d => color(d.nodeType));
 
     node.append('title')
       .text(d => d.id);
@@ -89,6 +89,8 @@ const ForceGraph: React.FC<ForceGraphProps> = ({nodes, links, onNodeClick }) => 
       event.subject.fx = null;
       event.subject.fy = null;
     }
+
+    console.log("Data: " + JSON.stringify(links, null, 2))
 
     return () => {
       simulation.stop();

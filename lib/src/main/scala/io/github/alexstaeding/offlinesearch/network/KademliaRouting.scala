@@ -1,19 +1,22 @@
 package io.github.alexstaeding.offlinesearch.network
 
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
+import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 import io.github.alexstaeding.offlinesearch.network.NodeId.DistanceOrdering
 import org.apache.logging.log4j.Logger
 
 import java.net.InetSocketAddress
 import java.util
-import java.util.concurrent.Executors
+import java.util.concurrent.{Executors, TimeUnit}
 import scala.annotation.tailrec
 import scala.collection.mutable
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
 
 class KademliaRouting[V: JsonValueCodec](
     private val networkFactory: NetworkAdapter.Factory,
     private val localNodeInfo: NodeInfo,
+    private val observerAddress: InetSocketAddress,
     private val kMaxSize: Int = 20, // Size of K-Buckets
     private val concurrency: Int = 3, // Number of concurrent searches
 )(using idSpace: NodeIdSpace, logger: Logger)
@@ -21,7 +24,7 @@ class KademliaRouting[V: JsonValueCodec](
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 
-  private val network = networkFactory.create(localNodeInfo.address, KademliaEventReceiver)
+  private val network = networkFactory.create(localNodeInfo.address, observerAddress, KademliaEventReceiver)
 
   private val buckets: mutable.Buffer[KBucket] = new mutable.ArrayDeque[KBucket]
 
@@ -127,13 +130,21 @@ class KademliaRouting[V: JsonValueCodec](
   override def putLocal(id: NodeId, value: Either[NodeInfo, V]): Boolean = {
     val index = distanceLeadingZeros(id)
     ensureBucketSpace(index) match {
-      case Some(bucket) => {
+      case Some(bucket) =>
         value match
           case Right(value)   => bucket.values.put(id, value)
           case Left(nodeInfo) => bucket.nodes.put(id, nodeInfo)
+        sendObserverUpdate()
         true
-      }
       case None => false
+    }
+  }
+
+  private def sendObserverUpdate(): Unit = {
+    val nodes = (homeBucket +: buckets.to(LazyList)).flatMap(_.nodes.keys).map(x => PeerUpdate(x.toHex, "node"))
+    val values = (homeBucket +: buckets.to(LazyList)).flatMap(_.values.keys).map(x => PeerUpdate(x.toHex, "value"))
+    if (!network.sendObserverUpdate(NodeInfoUpdate(localNodeInfo.id.toHex, nodes ++ values))) {
+      logger.error("Could not send update")
     }
   }
 

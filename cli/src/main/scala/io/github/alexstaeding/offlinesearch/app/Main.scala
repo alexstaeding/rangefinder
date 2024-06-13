@@ -30,11 +30,12 @@ def hello(): Unit = {
   logger.info(s"Starting client $x")
   val localNodeId = NodeId.generateRandom
   val bindAddress = InetSocketAddress("localhost", 9000 + x)
+  val observerAddress = InetSocketAddress("localhost", 3000)
   val localNodeInfo = NodeInfo(localNodeId, bindAddress)
   logger.info(s"localNodeId: '${localNodeId.toHex}' bindAddress: $bindAddress")
   logger.info(s"localInfo: ${localNodeId.toHex},${bindAddress.getHostString},${bindAddress.getPort}")
   logger.info("Type ping(id) to send a ping to a node")
-  val routing = new KademliaRouting[AppDT](HttpNetworkAdapter, localNodeInfo)
+  val routing = new KademliaRouting[AppDT](HttpNetworkAdapter, localNodeInfo, observerAddress)
   while (true) {
     val line = StdIn.readLine()
     line match {
