@@ -1,10 +1,6 @@
 package io.github.alexstaeding.offlinesearch.meta
 
-import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
-import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 import io.github.alexstaeding.offlinesearch.crdt.{Lattice, NodeScoped, ReplicatedLWW}
-import io.github.alexstaeding.offlinesearch.network.NodeId
-import io.github.alexstaeding.offlinesearch.network.NodeIdSpace
 
 case class MetaIndex[T](data: NodeScoped[ReplicatedLWW[Seq[PartialKey[T]]]])
 
@@ -14,10 +10,10 @@ object MetaIndex {
     MetaIndex(Lattice.mapLattice.merge(left.data, right.data))
   }
 
-  given codec[V](using NodeIdSpace, JsonValueCodec[V]): JsonValueCodec[MetaIndex[V]] = JsonCodecMaker.make
+//  given codec[V](using NodeIdSpace, JsonValueCodec[V]): JsonValueCodec[MetaIndex[V]] = JsonCodecMaker.make
 }
 
-extension [T](metaIndex: MetaIndex[T])(using PartialKeyActions[T]) {
+extension [T](metaIndex: MetaIndex[T])(using PartialKeyMatcher[T]) {
 
   /** Finds known partial keys that represent a partial T.
     *
