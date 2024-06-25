@@ -2,10 +2,12 @@ package io.github.alexstaeding.offlinesearch.app
 
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
+import io.github.alexstaeding.offlinesearch.meta.*
 import io.github.alexstaeding.offlinesearch.network.*
 import org.apache.logging.log4j.{LogManager, Logger}
 
 import java.net.InetSocketAddress
+import java.security.MessageDigest
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContext.parasitic
 import scala.io.StdIn
@@ -18,14 +20,23 @@ case class AppDT(data: String)
 
 object AppDT {
   given codec: JsonValueCodec[AppDT] = JsonCodecMaker.make
-  given hashingAlgorithm: HashingAlgorithm[AppDT] = (value: AppDT) => {
-    val hash = value.data.hashCode
-    NodeId(Array[Byte]((hash >> 24).toByte, (hash >> 16).toByte, (hash >> 8).toByte, hash.toByte))
+  given hashingAlgorithm: HashingAlgorithm[AppDT] = (value: PartialKey[AppDT]) => {
+    val hash = MessageDigest
+      .getInstance("SHA1")
+      .digest(value.startInclusive.data.getBytes("UTF-8") ++ value.endExclusive.data.getBytes("UTF-8"))
+    logger.info("Hash: " + hash.mkString("Array(", ", ", ")"))
+    NodeId(hash.take(idSpace.size))
   }
+  given universe: PartialKeyUniverse[AppDT] =
+    value => StringPrefixPartialKeyUniverse.getRootPartialKey(value.data).map(AppDT.apply)
+  given matcher: PartialKeyMatcher[AppDT] = new PartialKeyMatcher[AppDT]:
+    extension (partialKey: PartialKey[AppDT])
+      override def matches(search: AppDT): Boolean = StringPrefixPartialKeyMatcher.matches(partialKey.map(_.data))(search.data)
+  given ordering: Ordering[AppDT] = Ordering.by(_.data)
 }
 
 @main
-def hello(): Unit = {
+def main(): Unit = {
   val x = Random.nextInt(10)
   logger.info(s"Starting client $x")
   val localNodeId = NodeId.generateRandom
@@ -56,27 +67,23 @@ def hello(): Unit = {
       case s"store($value)" =>
         logger.info(s"Storing value: $value")
         routing
-          .store(AppDT(value))
+          .store(OwnedValue(localNodeId, AppDT(value), "test"))
           .onComplete {
             case Success(value) =>
               logger.info(s"Stored value: $value")
             case Failure(exception) =>
               logger.error(s"Failed to store value", exception)
           }(using ExecutionContext.parasitic)
-      case s"findValue($id)" =>
-        logger.info(s"Finding value for $id")
-        NodeId.fromHex(id) match
-          case Some(nodeId) =>
-            routing
-              .findValue(nodeId)
-              .onComplete {
-                case Success(value) =>
-                  logger.info(s"Found value: $value")
-                case Failure(exception) =>
-                  logger.error(s"Failed to find value", exception)
-              }(using ExecutionContext.parasitic)
-          case None =>
-            logger.info(s"Invalid node id: '$id'")
+      case s"search($search)" =>
+        logger.info(s"Search for $search")
+        routing
+          .search(PartialKey.ofOne(AppDT(search)))
+          .onComplete {
+            case Success(value) =>
+              logger.info(s"Found value: $value")
+            case Failure(exception) =>
+              logger.error(s"Failed to find value", exception)
+          }(using ExecutionContext.parasitic)
       case s"putLocalNode($id,$host,$port)" =>
         NodeId.fromHex(id) match
           case Some(nodeId) =>

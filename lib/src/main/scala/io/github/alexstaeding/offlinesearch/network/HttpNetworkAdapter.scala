@@ -33,7 +33,7 @@ class HttpNetworkAdapter[V: JsonValueCodec](
           request match
             case pingEvent: PingEvent[V]             => onReceive.receivePing(pingEvent)
             case findNodeEvent: FindNodeEvent[V]     => onReceive.receiveFindNode(findNodeEvent)
-            case findValueEvent: FindValueEvent[V]   => onReceive.receiveFindValue(findValueEvent)
+            case findValueEvent: SearchEvent[V]      => onReceive.receiveSearch(findValueEvent)
             case storeValueEvent: StoreValueEvent[V] => onReceive.receiveStoreValue(storeValueEvent)
 
         val response = eventAnswer match
@@ -86,7 +86,13 @@ class HttpNetworkAdapter[V: JsonValueCodec](
 
     logger.info(s"Request: $request")
 
-    client.send(request, BodyHandlers.ofString()).statusCode() == 200
+    try {
+      client.send(request, BodyHandlers.ofString()).statusCode() == 200
+    } catch {
+      case e: Exception =>
+        logger.error("Failed to send observer update", e)
+        false
+    }
   }
 }
 

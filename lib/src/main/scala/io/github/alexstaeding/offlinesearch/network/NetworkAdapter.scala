@@ -28,6 +28,6 @@ object NetworkAdapter {
 trait EventReceiver[V] {
   def receivePing(request: PingEvent[V]): Either[RedirectEvent[V], PingAnswerEvent[V]]
   def receiveFindNode(request: FindNodeEvent[V]): Either[RedirectEvent[V], FindNodeAnswerEvent[V]]
-  def receiveFindValue(request: FindValueEvent[V]): Either[RedirectEvent[V], FindValueAnswerEvent[V]]
+  def receiveSearch(request: SearchEvent[V]): Either[RedirectEvent[V], SearchAnswerEvent[V]]
   def receiveStoreValue(request: StoreValueEvent[V]): Either[RedirectEvent[V], StoreValueAnswerEvent[V]]
 }

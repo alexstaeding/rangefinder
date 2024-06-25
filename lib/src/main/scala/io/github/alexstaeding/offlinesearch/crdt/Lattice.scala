@@ -3,13 +3,13 @@ package io.github.alexstaeding.offlinesearch.crdt
 import scala.annotation.targetName
 
 @FunctionalInterface
-trait Lattice[A] {
+trait Lattice[V] {
 
-  def merge(left: A, right: A): A
+  def merge(left: V, right: V): V
 
-  extension (left: A) {
+  extension (left: V) {
     @targetName("mergeInfix")
-    inline infix def merge(right: A): A = Lattice.this.merge(left, right)
+    inline infix def merge(right: V): V = Lattice.this.merge(left, right)
   }
 }
 

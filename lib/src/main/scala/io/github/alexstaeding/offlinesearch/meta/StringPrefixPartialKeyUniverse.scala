@@ -6,6 +6,6 @@ object StringPrefixPartialKeyUniverse extends PartialKeyUniverse[String] {
       throw IllegalArgumentException("Cannot create a partial key for a blank string")
     }
     val firstChar = value.charAt(0).toString
-    PartialKey(firstChar, firstChar, Option.empty)
+    PartialKey(firstChar, firstChar)
   }
 }

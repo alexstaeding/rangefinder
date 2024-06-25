@@ -1,17 +1,16 @@
 package io.github.alexstaeding.offlinesearch.network
 
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
-import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
+import io.github.alexstaeding.offlinesearch.meta.{PartialKey, PartialKeyMatcher, PartialKeyUniverse}
 import io.github.alexstaeding.offlinesearch.network.NodeId.DistanceOrdering
 import org.apache.logging.log4j.Logger
 
 import java.net.InetSocketAddress
 import java.util
-import java.util.concurrent.{Executors, TimeUnit}
+import java.util.concurrent.Executors
 import scala.annotation.tailrec
 import scala.collection.mutable
-import scala.concurrent.duration.Duration
-import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
 
 class KademliaRouting[V: JsonValueCodec](
     private val networkFactory: NetworkAdapter.Factory,
@@ -19,8 +18,14 @@ class KademliaRouting[V: JsonValueCodec](
     private val observerAddress: InetSocketAddress,
     private val kMaxSize: Int = 20, // Size of K-Buckets
     private val concurrency: Int = 3, // Number of concurrent searches
-)(using idSpace: NodeIdSpace, logger: Logger)
-    extends Routing[V] {
+)(using
+    idSpace: NodeIdSpace,
+    logger: Logger,
+    universe: PartialKeyUniverse[V],
+    partialKeyMatcher: PartialKeyMatcher[V],
+    ordering: Ordering[V],
+    hashingAlgorithm: HashingAlgorithm[V],
+) extends Routing[V] {
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 
@@ -86,10 +91,11 @@ class KademliaRouting[V: JsonValueCodec](
       }
     }
 
-    override def receiveFindValue(request: FindValueEvent[V]): Either[RedirectEvent[V], FindValueAnswerEvent[V]] = {
+    override def receiveSearch(request: SearchEvent[V]): Either[RedirectEvent[V], SearchAnswerEvent[V]] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       getLocalValue(request.targetId) match
-        case Some(value) => request.createAnswer(Some(value))
+        case Some(indexGroup) =>
+          request.createAnswer(Some(indexGroup.values.to(LazyList).filter { x => request.search.matches(x.value) }.toList))
         case None =>
           getClosestBetterThan(request.targetId, localNodeInfo.id) match
             case closest if closest.nonEmpty => request.createRedirect(closest.head)
@@ -127,12 +133,15 @@ class KademliaRouting[V: JsonValueCodec](
     }
   }
 
-  override def putLocal(id: NodeId, value: Either[NodeInfo, V]): Boolean = {
+  override def putLocal(id: NodeId, localValue: Either[NodeInfo, OwnedValue[V]]): Boolean = {
     val index = distanceLeadingZeros(id)
     ensureBucketSpace(index) match {
       case Some(bucket) =>
-        value match
-          case Right(value)   => bucket.values.put(id, value)
+        localValue match
+          case Right(ownedValue) =>
+            bucket.ensureIndexGroup(id, universe.getRootPartialKey(ownedValue.value)) match
+              case Some(indexGroup: IndexGroup) => indexGroup.values.addOne(ownedValue)
+              case None                         => logger.error(s"Full indexGroup $id")
           case Left(nodeInfo) => bucket.nodes.put(id, nodeInfo)
         sendObserverUpdate()
         true
@@ -141,11 +150,11 @@ class KademliaRouting[V: JsonValueCodec](
   }
 
   private def sendObserverUpdate(): Unit = {
-    val nodes = (homeBucket +: buckets.to(LazyList)).flatMap(_.nodes.keys).map(x => PeerUpdate(x.toHex, "node"))
-    val values = (homeBucket +: buckets.to(LazyList)).flatMap(_.values.keys).map(x => PeerUpdate(x.toHex, "value"))
-    if (!network.sendObserverUpdate(NodeInfoUpdate(localNodeInfo.id.toHex, nodes ++ values))) {
-      logger.error("Could not send update")
-    }
+//    val nodes = (homeBucket +: buckets.to(LazyList)).flatMap(_.nodes.keys).map(x => PeerUpdate(x.toHex, "node"))
+//    val values = (homeBucket +: buckets.to(LazyList)).flatMap(_.values.keys).map(x => PeerUpdate(x.toHex, "value"))
+//    if (!network.sendObserverUpdate(NodeInfoUpdate(localNodeInfo.id.toHex, nodes ++ values))) {
+//      logger.error("Could not send update")
+//    }
   }
 
   private def getClosest(targetId: NodeId): Seq[NodeInfo] = {
@@ -170,19 +179,29 @@ class KademliaRouting[V: JsonValueCodec](
   private def getClosestBetterThan(targetId: NodeId, than: NodeId): Seq[NodeInfo] =
     getClosest(targetId).filter(info => DistanceOrdering(targetId).compare(info.id, than) < 0)
 
-  private def getLocalValue(targetId: NodeId): Option[V] = getKBucket(distanceLeadingZeros(targetId)).values.get(targetId)
+  private def getLocalValue(targetId: NodeId): Option[IndexGroup] = getKBucket(distanceLeadingZeros(targetId)).values.get(targetId)
 
   private def getLocalNode(targetId: NodeId): Option[NodeInfo] = getKBucket(distanceLeadingZeros(targetId)).nodes.get(targetId)
 
-  private def getLocal(targetId: NodeId): Option[NodeInfo | V] = getLocalNode(targetId).orElse(getLocalValue(targetId))
+  private def getLocal(targetId: NodeId): Option[NodeInfo | IndexGroup] = getLocalNode(targetId).orElse(getLocalValue(targetId))
+
+  private case class IndexGroup(
+      partialKey: PartialKey[V],
+  ) {
+    val values: mutable.TreeSet[OwnedValue[V]] = new mutable.TreeSet[OwnedValue[V]]()
+  }
 
   private class KBucket {
     val nodes: mutable.Map[NodeId, NodeInfo] = new mutable.HashMap[NodeId, NodeInfo]()
-    val values: mutable.Map[NodeId, V] = new mutable.HashMap[NodeId, V]()
+    val values: mutable.Map[NodeId, IndexGroup] = new mutable.HashMap[NodeId, IndexGroup]()
 
     def size: Int = nodes.size + values.size
     def isFull: Boolean = size >= kMaxSize
     def hasSpace: Boolean = !isFull
+
+    def ensureIndexGroup(id: NodeId, key: PartialKey[V]): Option[IndexGroup] = {
+      if (isFull) None else Some(values.getOrElseUpdate(id, IndexGroup(key)))
+    }
   }
 
   private def remoteCall[C, A <: AnswerEvent[V] { type Content <: C }, R <: RequestEvent[V] { type Answer <: A }](
@@ -225,13 +244,13 @@ class KademliaRouting[V: JsonValueCodec](
               .map(_.getOrElse(false))
   }
 
-  override def store(value: V)(using hashingAlgorithm: HashingAlgorithm[V]): Future[Boolean] = {
-    val targetId = hashingAlgorithm.hash(value)
-    logger.info(s"Determined hash for value $value -> ${targetId.toHex}")
+  override def store(ownedValue: OwnedValue[V]): Future[Boolean] = {
+    val targetId = hashingAlgorithm.hash(universe.getRootPartialKey(ownedValue.value))
+    logger.info(s"Determined hash for value $ownedValue -> ${targetId.toHex}")
     Future
       .find(getClosest(targetId).map { case nodeInfo @ NodeInfo(_, address) =>
-        remoteCall(address, RequestEvent.createStoreValue(localNodeInfo, targetId, value)).recover { exception =>
-          logger.error(s"Failed to send remote storeValue to $nodeInfo", exception)
+        remoteCall(address, RequestEvent.createStoreValue(localNodeInfo, targetId, ownedValue)).recover { exception =>
+          logger.error(s"Failed to send remote store to $nodeInfo", exception)
           false
         }
       })(identity)
@@ -240,17 +259,18 @@ class KademliaRouting[V: JsonValueCodec](
 
   override def findNode(targetId: NodeId): Future[NodeInfo] = ???
 
-  override def findValue(targetId: NodeId): Future[Option[V]] = {
+  override def search(key: PartialKey[V]): Future[Seq[OwnedValue[V]]] = {
+    val targetId = hashingAlgorithm.hash(key)
     getLocalValue(targetId) match
-      case Some(value) => Future.successful(Some(value))
+      case Some(indexGroup) => Future.successful(indexGroup.values.to(LazyList).filter { x => key.matches(x.value) }.toList)
       case None =>
         Future
           .find(getClosest(targetId).map { case nodeInfo @ NodeInfo(_, address) =>
-            remoteCall(address, RequestEvent.createFindValue(localNodeInfo, targetId)).recover { exception =>
-              logger.error(s"Failed to send remote findValue $nodeInfo", exception)
+            remoteCall(address, RequestEvent.createSearch(localNodeInfo, targetId, key)).recover { exception =>
+              logger.error(s"Failed to send remote search $nodeInfo", exception)
               None
             }
           })(_.isDefined)
-          .map(_.flatten)
+          .map(_.flatten.getOrElse(Seq.empty))
   }
 }

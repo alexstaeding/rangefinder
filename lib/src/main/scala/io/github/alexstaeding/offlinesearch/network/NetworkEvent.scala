@@ -2,6 +2,7 @@ package io.github.alexstaeding.offlinesearch.network
 
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
+import io.github.alexstaeding.offlinesearch.meta.PartialKey
 
 import java.util.UUID
 
@@ -19,8 +20,8 @@ sealed trait AnswerEvent[V] extends NetworkEvent[V] {
   val content: Content
 }
 
-sealed trait OptionAnswerEvent[V] extends AnswerEvent[V] {
-  override type Content = Option[V]
+sealed trait SeqAnswerEvent[V] extends AnswerEvent[V] {
+  override type Content = Option[Seq[OwnedValue[V]]]
 }
 
 sealed trait BooleanAnswerEvent[V] extends AnswerEvent[V] {
@@ -59,10 +60,10 @@ object RequestEvent {
   def createFindNode[V](localNodeInfo: NodeInfo, targetId: NodeId): FindNodeEvent[V] =
     FindNodeEvent[V](UUID.randomUUID(), localNodeInfo, targetId)
 
-  def createFindValue[V](localNodeInfo: NodeInfo, targetId: NodeId): FindValueEvent[V] =
-    FindValueEvent[V](UUID.randomUUID(), localNodeInfo, targetId)
+  def createSearch[V](localNodeInfo: NodeInfo, targetId: NodeId, key: PartialKey[V]): SearchEvent[V] =
+    SearchEvent[V](UUID.randomUUID(), localNodeInfo, targetId, key)
 
-  def createStoreValue[V](localNodeInfo: NodeInfo, targetId: NodeId, value: V): StoreValueEvent[V] =
+  def createStoreValue[V](localNodeInfo: NodeInfo, targetId: NodeId, value: OwnedValue[V]): StoreValueEvent[V] =
     StoreValueEvent[V](UUID.randomUUID(), localNodeInfo, targetId, value)
 }
 
@@ -86,21 +87,22 @@ case class FindNodeEvent[V](
     Right(FindNodeAnswerEvent(requestId, content))
 }
 
-case class FindValueEvent[V](
+case class SearchEvent[V](
     override val requestId: UUID,
     override val sourceInfo: NodeInfo,
     override val targetId: NodeId,
+    search: PartialKey[V],
 ) extends RequestEvent[V] {
-  override type Answer = FindValueAnswerEvent[V]
-  def createAnswer(content: Option[V]): Right[RedirectEvent[V], FindValueAnswerEvent[V]] =
-    Right(FindValueAnswerEvent(requestId, content))
+  override type Answer = SearchAnswerEvent[V]
+  def createAnswer(content: Option[Seq[OwnedValue[V]]]): Right[RedirectEvent[V], SearchAnswerEvent[V]] =
+    Right(SearchAnswerEvent(requestId, content))
 }
 
 case class StoreValueEvent[V](
     override val requestId: UUID,
     override val sourceInfo: NodeInfo,
     override val targetId: NodeId,
-    value: V,
+    value: OwnedValue[V],
 ) extends RequestEvent[V] {
   override type Answer = StoreValueAnswerEvent[V]
   def createAnswer(content: Boolean): Right[RedirectEvent[V], StoreValueAnswerEvent[V]] =
@@ -109,7 +111,7 @@ case class StoreValueEvent[V](
 
 case class PingAnswerEvent[V](override val requestId: UUID, override val content: Boolean) extends BooleanAnswerEvent[V]
 case class FindNodeAnswerEvent[V](override val requestId: UUID, override val content: Boolean) extends BooleanAnswerEvent[V]
-case class FindValueAnswerEvent[V](override val requestId: UUID, override val content: Option[V]) extends OptionAnswerEvent[V]
+case class SearchAnswerEvent[V](override val requestId: UUID, override val content: Option[Seq[OwnedValue[V]]]) extends SeqAnswerEvent[V]
 case class StoreValueAnswerEvent[V](override val requestId: UUID, override val content: Boolean) extends BooleanAnswerEvent[V]
 
 case class RedirectEvent[V](override val requestId: UUID, closerTargetInfo: NodeInfo) extends AnswerEvent[V] {
