@@ -1,5 +1,6 @@
 package io.github.alexstaeding.offlinesearch.meta
 
 trait PartialKeyUniverse[V] {
-  def getRootPartialKey(value: V): PartialKey[V]
+  def getRootKey(value: V): PartialKey[V]
+  def getOverlappingRootKeys(key: PartialKey[V]): Seq[PartialKey[V]]
 }

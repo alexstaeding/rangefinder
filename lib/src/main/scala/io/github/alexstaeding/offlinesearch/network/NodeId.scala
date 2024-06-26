@@ -18,8 +18,8 @@ case class NodeId(bytes: Array[Byte])(using val space: NodeIdSpace) {
 
 object NodeId {
 
-  def generateRandom(using idSpace: NodeIdSpace): NodeId = {
-    val random = new util.Random()
+  def generateRandom(seed: Option[Int] = None)(using idSpace: NodeIdSpace): NodeId = {
+    val random = seed.map(new util.Random(_)).getOrElse(util.Random())
     val bytes = Array.fill[Byte](idSpace.size)(0)
     random.nextBytes(bytes)
     NodeId(bytes)
@@ -28,10 +28,9 @@ object NodeId {
   def zero(using idSpace: NodeIdSpace): NodeId = NodeId(Array.fill[Byte](idSpace.size)(0))
 
   def fromHex(hex: String)(using idSpace: NodeIdSpace): Option[NodeId] = {
-    val bytes = try
-      hex.grouped(2).map(Integer.parseInt(_, 16).toByte).toArray
-    catch
-      case e: NumberFormatException => return None
+    val bytes =
+      try hex.grouped(2).map(Integer.parseInt(_, 16).toByte).toArray
+      catch case e: NumberFormatException => return None
     Some(NodeId(bytes))
   }
 

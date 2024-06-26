@@ -11,7 +11,7 @@ import java.security.MessageDigest
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContext.parasitic
 import scala.io.StdIn
-import scala.util.{Failure, Random, Success}
+import scala.util.{CommandLineParser, Failure, Success}
 
 implicit val idSpace: NodeIdSpace = NodeIdSpace(4)
 implicit val logger: Logger = LogManager.getLogger("main")
@@ -27,20 +27,25 @@ object AppDT {
     logger.info("Hash: " + hash.mkString("Array(", ", ", ")"))
     NodeId(hash.take(idSpace.size))
   }
-  given universe: PartialKeyUniverse[AppDT] =
-    value => StringPrefixPartialKeyUniverse.getRootPartialKey(value.data).map(AppDT.apply)
-  given matcher: PartialKeyMatcher[AppDT] = new PartialKeyMatcher[AppDT]:
+  given universe: PartialKeyUniverse[AppDT] with
+    override def getRootKey(value: AppDT): PartialKey[AppDT] =
+      StringPrefixPartialKeyUniverse.getRootKey(value.data).map(AppDT.apply)
+    override def getOverlappingRootKeys(key: PartialKey[AppDT]): Seq[PartialKey[AppDT]] =
+      StringPrefixPartialKeyUniverse.getOverlappingRootKeys(key.map(_.data)).map(_.map(AppDT.apply))
+
+  given matcher: PartialKeyMatcher[AppDT] with
     extension (partialKey: PartialKey[AppDT])
       override def matches(search: AppDT): Boolean = StringPrefixPartialKeyMatcher.matches(partialKey.map(_.data))(search.data)
   given ordering: Ordering[AppDT] = Ordering.by(_.data)
 }
 
+given CommandLineParser.FromString[Int] = Integer.parseInt(_)
+
 @main
-def main(): Unit = {
-  val x = Random.nextInt(10)
-  logger.info(s"Starting client $x")
-  val localNodeId = NodeId.generateRandom
-  val bindAddress = InetSocketAddress("localhost", 9000 + x)
+def main(clientNum: Int): Unit = {
+  logger.info(s"Starting client $clientNum")
+  val localNodeId = NodeId.generateRandom(Some(clientNum))
+  val bindAddress = InetSocketAddress("localhost", 9000 + clientNum)
   val observerAddress = InetSocketAddress("localhost", 3000)
   val localNodeInfo = NodeInfo(localNodeId, bindAddress)
   logger.info(s"localNodeId: '${localNodeId.toHex}' bindAddress: $bindAddress")

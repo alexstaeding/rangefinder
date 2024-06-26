@@ -95,8 +95,10 @@ class KademliaRouting[V: JsonValueCodec](
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       getLocalValue(request.targetId) match
         case Some(indexGroup) =>
+          logger.info(s"Search: found local index group ${indexGroup.partialKey} for id ${request.targetId}")
           request.createAnswer(Some(indexGroup.values.to(LazyList).filter { x => request.search.matches(x.value) }.toList))
         case None =>
+          logger.info(s"Search: did not find local index group for key ${request.targetId}, looking for closer nodes")
           getClosestBetterThan(request.targetId, localNodeInfo.id) match
             case closest if closest.nonEmpty => request.createRedirect(closest.head)
             case _                           => request.createAnswer(None)
@@ -105,6 +107,7 @@ class KademliaRouting[V: JsonValueCodec](
     override def receiveStoreValue(request: StoreValueEvent[V]): Either[RedirectEvent[V], StoreValueAnswerEvent[V]] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       val localSuccess = putLocalValue(request.targetId, request.value)
+      logger.info(s"Stored value ${request.value.value} at id ${request.targetId} locally: $localSuccess")
       getClosestBetterThan(request.targetId, localNodeInfo.id) match
         case closest if closest.nonEmpty => request.createRedirect(closest.head)
         case _                           => request.createAnswer(localSuccess)
@@ -139,7 +142,7 @@ class KademliaRouting[V: JsonValueCodec](
       case Some(bucket) =>
         localValue match
           case Right(ownedValue) =>
-            bucket.ensureIndexGroup(id, universe.getRootPartialKey(ownedValue.value)) match
+            bucket.ensureIndexGroup(id, universe.getRootKey(ownedValue.value)) match
               case Some(indexGroup: IndexGroup) => indexGroup.values.addOne(ownedValue)
               case None                         => logger.error(s"Full indexGroup $id")
           case Left(nodeInfo) => bucket.nodes.put(id, nodeInfo)
@@ -245,8 +248,9 @@ class KademliaRouting[V: JsonValueCodec](
   }
 
   override def store(ownedValue: OwnedValue[V]): Future[Boolean] = {
-    val targetId = hashingAlgorithm.hash(universe.getRootPartialKey(ownedValue.value))
-    logger.info(s"Determined hash for value $ownedValue -> ${targetId.toHex}")
+    val rootKey = universe.getRootKey(ownedValue.value)
+    val targetId = hashingAlgorithm.hash(rootKey)
+    logger.info(s"Determined hash for rootKey $rootKey -> ${targetId.toHex}")
     Future
       .find(getClosest(targetId).map { case nodeInfo @ NodeInfo(_, address) =>
         remoteCall(address, RequestEvent.createStoreValue(localNodeInfo, targetId, ownedValue)).recover { exception =>
@@ -260,13 +264,24 @@ class KademliaRouting[V: JsonValueCodec](
   override def findNode(targetId: NodeId): Future[NodeInfo] = ???
 
   override def search(key: PartialKey[V]): Future[Seq[OwnedValue[V]]] = {
-    val targetId = hashingAlgorithm.hash(key)
+    // find each overlappting root key for this key
+    val rootKeys = universe.getOverlappingRootKeys(key)
+    logger.info(s"Search query $key matches root keys $rootKeys")
+    // wait for all futures to complete and return full result
+    Future.sequence(rootKeys.map((x: PartialKey[V]) => search(x, key))).map(_.flatten)
+  }
+
+  private def search(rootKey: PartialKey[V], searchKey: PartialKey[V]): Future[Seq[OwnedValue[V]]] = {
+    val targetId = hashingAlgorithm.hash(rootKey)
     getLocalValue(targetId) match
-      case Some(indexGroup) => Future.successful(indexGroup.values.to(LazyList).filter { x => key.matches(x.value) }.toList)
+      case Some(indexGroup) =>
+        logger.info(s"Found local index group ${indexGroup.partialKey}")
+        Future.successful(indexGroup.values.to(LazyList).filter { x => searchKey.matches(x.value) }.toList)
       case None =>
+        logger.info(s"Looking for remote index group")
         Future
           .find(getClosest(targetId).map { case nodeInfo @ NodeInfo(_, address) =>
-            remoteCall(address, RequestEvent.createSearch(localNodeInfo, targetId, key)).recover { exception =>
+            remoteCall(address, RequestEvent.createSearch(localNodeInfo, targetId, searchKey)).recover { exception =>
               logger.error(s"Failed to send remote search $nodeInfo", exception)
               None
             }
