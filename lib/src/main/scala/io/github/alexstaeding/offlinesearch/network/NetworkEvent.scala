@@ -17,7 +17,7 @@ sealed trait NetworkEvent[V] {
 
 sealed trait AnswerEvent[V] extends NetworkEvent[V] {
   type Content
-  val content: Content
+  def content: Content
 }
 
 sealed trait SeqAnswerEvent[V] extends AnswerEvent[V] {
@@ -116,7 +116,7 @@ case class StoreValueAnswerEvent[V](override val requestId: UUID, override val c
 
 case class RedirectEvent[V](override val requestId: UUID, closerTargetInfo: NodeInfo) extends AnswerEvent[V] {
   override type Content = Nothing
-  override val content: Nothing = throw new NoSuchElementException
+  override def content: Nothing = throw new NoSuchElementException
 }
 
 case class ErrorEvent[V](override val requestId: UUID, message: String) extends AnswerEvent[V] {
