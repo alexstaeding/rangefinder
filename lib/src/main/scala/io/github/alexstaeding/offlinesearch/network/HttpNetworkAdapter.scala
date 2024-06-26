@@ -12,6 +12,7 @@ import java.net.{InetSocketAddress, URI}
 import java.util.concurrent.Executors
 import scala.concurrent.*
 import scala.jdk.FutureConverters.CompletionStageOps
+import scala.util.Try
 
 class HttpNetworkAdapter[V: JsonValueCodec](
     private val bindAddress: InetSocketAddress,
@@ -29,18 +30,18 @@ class HttpNetworkAdapter[V: JsonValueCodec](
       "/api/v1/message",
       (exchange: HttpExchange) => {
         val request = readFromStream(exchange.getRequestBody)(using RequestEvent.codec)
-        val eventAnswer: Either[RedirectEvent[V], AnswerEvent[V]] =
-          request match
-            case pingEvent: PingEvent[V]             => onReceive.receivePing(pingEvent)
-            case findNodeEvent: FindNodeEvent[V]     => onReceive.receiveFindNode(findNodeEvent)
-            case findValueEvent: SearchEvent[V]      => onReceive.receiveSearch(findValueEvent)
-            case storeValueEvent: StoreValueEvent[V] => onReceive.receiveStoreValue(storeValueEvent)
+        val response: String = processRequest(request)
+          .recover { case e: Exception =>
+            logger.error("Failed to process request", e)
+            Right(ErrorEvent(request.requestId, s"Internal server error: ${e.getClass} ${e.getMessage}"))
+          }
+          .map(serializeAnswer)
+          .recover { case e: Exception =>
+            logger.error("Failed to serialize response", e)
+            """{"type":"ErrorEvent"}"""
+          }.get
 
-        val response = eventAnswer match
-          case Left(redirect) => writeToString(redirect)(using AnswerEvent.codec)
-          case Right(answer)  => writeToString(answer)(using AnswerEvent.codec)
-
-        logger.info(s"Received message $request and sending response $eventAnswer")
+        logger.info(s"Received message $request and sending response $response")
 
         exchange.sendResponseHeaders(200, response.length)
         exchange.getResponseBody.write(response.getBytes)
@@ -52,23 +53,48 @@ class HttpNetworkAdapter[V: JsonValueCodec](
     logger.info("Started server on " + bindAddress)
   }
 
+  private def processRequest(request: RequestEvent[V]): Try[Either[RedirectEvent[V], AnswerEvent[V]]] =
+    Try {
+      request match
+        case pingEvent: PingEvent[V]             => onReceive.receivePing(pingEvent)
+        case findNodeEvent: FindNodeEvent[V]     => onReceive.receiveFindNode(findNodeEvent)
+        case findValueEvent: SearchEvent[V]      => onReceive.receiveSearch(findValueEvent)
+        case storeValueEvent: StoreValueEvent[V] => onReceive.receiveStoreValue(storeValueEvent)
+    }
+
+  private def serializeAnswer(answer: Either[RedirectEvent[V], AnswerEvent[V]]): String = {
+    logger.info(s"Serializing answer $answer")
+    answer match
+      case Left(redirect) => writeToString(redirect)(using AnswerEvent.codec)
+      case Right(answer)  => writeToString(answer)(using AnswerEvent.codec)
+  }
+
   override def send[A <: AnswerEvent[V], R <: RequestEvent[V] { type Answer <: A }](
       nextHop: InetSocketAddress,
       event: R,
   ): Future[Either[RedirectEvent[V], A]] = {
+    logger.info(s"Sending message $event to $nextHop")
+    val body = writeToString(event)(using RequestEvent.codec)
     val request = HttpRequest
       .newBuilder()
       .version(Version.HTTP_1_1)
       .uri(URI.create(s"http://${nextHop.getAddress.getHostAddress}:${nextHop.getPort}/api/v1/message"))
-      .POST(BodyPublishers.ofString(writeToString(event)(using RequestEvent.codec)))
+      .POST(BodyPublishers.ofString(body))
       .build()
 
+    logger.info(s"Created request: $request with body: $body")
     client
       .sendAsync(request, BodyHandlers.ofString())
-      .thenApply { response => readFromString(response.body())(using AnswerEvent.codec) }
+      .thenApply { response =>
+        logger.info("Received response: " + response)
+        readFromString(response.body())(using AnswerEvent.codec)
+      }
       .thenApply {
         case redirect: RedirectEvent[V] => Left(redirect)
-        case answer                     => Right(answer.asInstanceOf[A])
+        case answer =>
+          answer match
+            case ErrorEvent(_, message) => throw new RuntimeException(message)
+            case _                      => Right(answer.asInstanceOf[A])
       }
       .asScala
   }

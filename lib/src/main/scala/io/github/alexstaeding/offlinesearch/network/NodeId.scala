@@ -31,7 +31,7 @@ object NodeId {
     val bytes =
       try hex.grouped(2).map(Integer.parseInt(_, 16).toByte).toArray
       catch case e: NumberFormatException => return None
-    Some(NodeId(bytes))
+    if (bytes.length == idSpace.size) Some(NodeId(bytes)) else None
   }
 
   case class DistanceOrdering(targetId: NodeId) extends Ordering[NodeId] {

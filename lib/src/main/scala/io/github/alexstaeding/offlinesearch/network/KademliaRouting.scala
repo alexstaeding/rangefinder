@@ -215,6 +215,7 @@ class KademliaRouting[V: JsonValueCodec](
     network
       .send(nextHopAddress, originator)
       .map { answer =>
+        logger.info(s"Received answer $answer for ${originator.targetId}")
         val answerId = answer match
           case Left(value)  => value.requestId
           case Right(value) => value.requestId
@@ -248,7 +249,12 @@ class KademliaRouting[V: JsonValueCodec](
   }
 
   override def store(ownedValue: OwnedValue[V]): Future[Boolean] = {
-    val rootKey = universe.getRootKey(ownedValue.value)
+    val rootKey =
+      try universe.getRootKey(ownedValue.value)
+      catch
+        case e: Exception =>
+          logger.error(s"Failed to get root key for value ${ownedValue.value}", e)
+          return Future.successful(false)
     val targetId = hashingAlgorithm.hash(rootKey)
     logger.info(s"Determined hash for rootKey $rootKey -> ${targetId.toHex}")
     Future
@@ -264,8 +270,12 @@ class KademliaRouting[V: JsonValueCodec](
   override def findNode(targetId: NodeId): Future[NodeInfo] = ???
 
   override def search(key: PartialKey[V]): Future[Seq[OwnedValue[V]]] = {
-    // find each overlappting root key for this key
-    val rootKeys = universe.getOverlappingRootKeys(key)
+    val rootKeys =
+      try universe.getOverlappingRootKeys(key)
+      catch
+        case e: Exception =>
+          logger.error(s"Failed to get root keys for key $key", e)
+          return Future.successful(Seq.empty)
     logger.info(s"Search query $key matches root keys $rootKeys")
     // wait for all futures to complete and return full result
     Future.sequence(rootKeys.map((x: PartialKey[V]) => search(x, key))).map(_.flatten)

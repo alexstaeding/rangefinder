@@ -118,3 +118,8 @@ case class RedirectEvent[V](override val requestId: UUID, closerTargetInfo: Node
   override type Content = Nothing
   override val content: Nothing = throw new NoSuchElementException
 }
+
+case class ErrorEvent[V](override val requestId: UUID, message: String) extends AnswerEvent[V] {
+  override type Content = String
+  override val content: String = message
+}
