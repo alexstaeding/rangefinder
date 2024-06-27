@@ -278,7 +278,7 @@ class KademliaRouting[V: JsonValueCodec](
           return Future.successful(Seq.empty)
     logger.info(s"Search query $key matches root keys $rootKeys")
     // wait for all futures to complete and return full result
-    Future.sequence(rootKeys.map((x: PartialKey[V]) => search(x, key))).map(_.flatten)
+    Future.sequence(rootKeys.map(x => search(x, key))).map(_.flatten)
   }
 
   private def search(rootKey: PartialKey[V], searchKey: PartialKey[V]): Future[Seq[OwnedValue[V]]] = {
