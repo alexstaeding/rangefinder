@@ -11,5 +11,5 @@ implicit val logger: Logger = LogManager.getLogger("main")
 
 @main
 def main(): Unit = {
-  
+  logger.info(s"Starting headless node")
 }

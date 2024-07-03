@@ -1,13 +1,11 @@
 package io.github.alexstaeding.offlinesearch.cli
 
-import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
-import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 import io.github.alexstaeding.offlinesearch.meta.*
 import io.github.alexstaeding.offlinesearch.network.*
+import io.github.alexstaeding.offlinesearch.types.simple.StringIndex
 import org.apache.logging.log4j.{LogManager, Logger}
 
 import java.net.InetSocketAddress
-import java.security.MessageDigest
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContext.parasitic
 import scala.io.StdIn
@@ -15,29 +13,6 @@ import scala.util.{CommandLineParser, Failure, Success}
 
 implicit val idSpace: NodeIdSpace = NodeIdSpace(4)
 implicit val logger: Logger = LogManager.getLogger("main")
-
-case class AppDT(data: String)
-
-object AppDT {
-  given codec: JsonValueCodec[AppDT] = JsonCodecMaker.make
-  given hashingAlgorithm: HashingAlgorithm[AppDT] = (value: PartialKey[AppDT]) => {
-    val hash = MessageDigest
-      .getInstance("SHA1")
-      .digest(value.startInclusive.data.getBytes("UTF-8") ++ value.endExclusive.data.getBytes("UTF-8"))
-    logger.info("Hash: " + hash.mkString("Array(", ", ", ")"))
-    NodeId(hash.take(idSpace.size))
-  }
-  given universe: PartialKeyUniverse[AppDT] with
-    override def getRootKey(value: AppDT): PartialKey[AppDT] =
-      StringPrefixPartialKeyUniverse.getRootKey(value.data).map(AppDT.apply)
-    override def getOverlappingRootKeys(key: PartialKey[AppDT]): Seq[PartialKey[AppDT]] =
-      StringPrefixPartialKeyUniverse.getOverlappingRootKeys(key.map(_.data)).map(_.map(AppDT.apply))
-
-  given matcher: PartialKeyMatcher[AppDT] with
-    extension (partialKey: PartialKey[AppDT])
-      override def matches(search: AppDT): Boolean = StringPrefixPartialKeyMatcher.matches(partialKey.map(_.data))(search.data)
-  given ordering: Ordering[AppDT] = Ordering.by(_.data)
-}
 
 given CommandLineParser.FromString[Int] = Integer.parseInt(_)
 
@@ -51,7 +26,7 @@ def main(clientNum: Int): Unit = {
   logger.info(s"localNodeId: '${localNodeId.toHex}' bindAddress: $bindAddress")
   logger.info(s"localInfo: ${localNodeId.toHex},${bindAddress.getHostString},${bindAddress.getPort}")
   logger.info("Type ping(id) to send a ping to a node")
-  val routing = new KademliaRouting[AppDT](HttpNetworkAdapter, localNodeInfo, observerAddress)
+  val routing = new KademliaRouting[StringIndex](HttpNetworkAdapter, localNodeInfo, observerAddress)
   while (true) {
     val line = StdIn.readLine()
     line match {
@@ -72,7 +47,7 @@ def main(clientNum: Int): Unit = {
       case s"store($value)" =>
         logger.info(s"Storing value: $value")
         routing
-          .store(OwnedValue(localNodeId, AppDT(value), "test"))
+          .store(OwnedValue(localNodeId, StringIndex(value), "test"))
           .onComplete {
             case Success(value) =>
               logger.info(s"Stored value: $value")
@@ -82,7 +57,7 @@ def main(clientNum: Int): Unit = {
       case s"search($search)" =>
         logger.info(s"Search for $search")
         routing
-          .search(PartialKey.ofOne(AppDT(search)))
+          .search(PartialKey.ofOne(StringIndex(search)))
           .onComplete {
             case Success(value) =>
               logger.info(s"Found value: $value")
