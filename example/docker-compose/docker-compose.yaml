@@ -4,7 +4,7 @@ services:
   node-0:
     build:
       context: ../../
-      dockerfile: cli.Dockerfile
+      dockerfile: ../../app.headless.Dockerfile
     expose:
       - 9000
     command:
@@ -12,7 +12,7 @@ services:
   node-1:
     build:
       context: ../../
-      dockerfile: cli.Dockerfile
+      dockerfile: ../../app.headless.Dockerfile
     expose:
       - 9000
     command:
