@@ -15,7 +15,7 @@ import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Futu
 class KademliaRouting[V: JsonValueCodec](
     private val networkFactory: NetworkAdapter.Factory,
     private val localNodeInfo: NodeInfo,
-    private val observerAddress: InetSocketAddress,
+    private val observerAddress: Option[InetSocketAddress],
     private val kMaxSize: Int = 20, // Size of K-Buckets
     private val concurrency: Int = 3, // Number of concurrent searches
 )(using
@@ -153,11 +153,9 @@ class KademliaRouting[V: JsonValueCodec](
   }
 
   private def sendObserverUpdate(): Unit = {
-//    val nodes = (homeBucket +: buckets.to(LazyList)).flatMap(_.nodes.keys).map(x => PeerUpdate(x.toHex, "node"))
-//    val values = (homeBucket +: buckets.to(LazyList)).flatMap(_.values.keys).map(x => PeerUpdate(x.toHex, "value"))
-//    if (!network.sendObserverUpdate(NodeInfoUpdate(localNodeInfo.id.toHex, nodes ++ values))) {
-//      logger.error("Could not send update")
-//    }
+    val nodes = (homeBucket +: buckets.to(LazyList)).flatMap(_.nodes.keys).map(x => PeerUpdate(x.toHex, "node"))
+    val values = (homeBucket +: buckets.to(LazyList)).flatMap(_.values.keys).map(x => PeerUpdate(x.toHex, "value"))
+    network.sendObserverUpdate(NodeInfoUpdate(localNodeInfo.id.toHex, nodes ++ values))
   }
 
   private def getClosest(targetId: NodeId): Seq[NodeInfo] = {

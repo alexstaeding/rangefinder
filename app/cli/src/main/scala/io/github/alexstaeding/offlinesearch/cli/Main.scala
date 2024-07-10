@@ -14,18 +14,18 @@ import scala.util.{CommandLineParser, Failure, Success}
 implicit val idSpace: NodeIdSpace = NodeIdSpace(4)
 implicit val logger: Logger = LogManager.getLogger("main")
 
-given CommandLineParser.FromString[Int] = Integer.parseInt(_)
-
 @main
-def main(clientNum: Int): Unit = {
+def cliMain(clientNum: Int): Unit = {
   logger.info(s"Starting client $clientNum")
   val localNodeId = NodeId.generateRandom(Some(clientNum))
   val bindAddress = InetSocketAddress("localhost", 9000 + clientNum)
-  val observerAddress = InetSocketAddress("localhost", 3000)
   val localNodeInfo = NodeInfo(localNodeId, bindAddress)
+//  val observerAddress = Some(InetSocketAddress("localhost", 3000))
+  val observerAddress = None
   logger.info(s"localNodeId: '${localNodeId.toHex}' bindAddress: $bindAddress")
   logger.info(s"localInfo: ${localNodeId.toHex},${bindAddress.getHostString},${bindAddress.getPort}")
   logger.info("Type ping(id) to send a ping to a node")
+  // start server threads
   val routing = new KademliaRouting[StringIndex](HttpNetworkAdapter, localNodeInfo, observerAddress)
   while (true) {
     val line = StdIn.readLine()

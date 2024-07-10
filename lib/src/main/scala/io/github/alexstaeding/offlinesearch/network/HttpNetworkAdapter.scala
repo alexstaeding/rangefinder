@@ -16,7 +16,7 @@ import scala.util.Try
 
 class HttpNetworkAdapter[V: JsonValueCodec](
     private val bindAddress: InetSocketAddress,
-    private val observerAddress: InetSocketAddress,
+    private val observerAddress: Option[InetSocketAddress],
     private val onReceive: EventReceiver[V],
 )(using logger: Logger)
     extends NetworkAdapter[V] {
@@ -99,13 +99,17 @@ class HttpNetworkAdapter[V: JsonValueCodec](
       .asScala
   }
 
-  override def sendObserverUpdate(update: NodeInfoUpdate): Boolean = {
+  override def sendObserverUpdate(update: NodeInfoUpdate): Unit = {
+    if (observerAddress.isEmpty) {
+      return
+    }
+
     val serializedUpdate = writeToString(update)
     logger.info(s"Sending observer update $serializedUpdate")
     val request = HttpRequest
       .newBuilder()
       .version(Version.HTTP_1_1)
-      .uri(URI.create(s"http://${observerAddress.getAddress.getHostAddress}:${observerAddress.getPort}/api/node"))
+      .uri(URI.create(s"http://${observerAddress.get.getAddress.getHostAddress}:${observerAddress.get.getPort}/api/node"))
       .header("Content-Type", "application/json")
       .PUT(BodyPublishers.ofString(serializedUpdate))
       .build()
@@ -125,7 +129,7 @@ class HttpNetworkAdapter[V: JsonValueCodec](
 object HttpNetworkAdapter extends NetworkAdapter.Factory {
   def create[V: JsonValueCodec](
       bindAddress: InetSocketAddress,
-      observerAddress: InetSocketAddress,
+      observerAddress: Option[InetSocketAddress],
       onReceive: EventReceiver[V],
   )(using logger: Logger): NetworkAdapter[V] = HttpNetworkAdapter(bindAddress, observerAddress, onReceive)
 }

@@ -12,14 +12,14 @@ trait NetworkAdapter[V] {
       event: R,
   ): Future[Either[RedirectEvent[V], A]]
   
-  def sendObserverUpdate(update: NodeInfoUpdate): Boolean
+  def sendObserverUpdate(update: NodeInfoUpdate): Unit
 }
 
 object NetworkAdapter {
   trait Factory {
     def create[V: JsonValueCodec](
         bindAddress: InetSocketAddress,
-        observerAddress: InetSocketAddress,
+        observerAddress: Option[InetSocketAddress],
         onReceive: EventReceiver[V],
     )(using logger: Logger): NetworkAdapter[V]
   }
