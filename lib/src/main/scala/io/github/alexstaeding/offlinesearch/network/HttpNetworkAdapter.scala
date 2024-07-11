@@ -121,7 +121,6 @@ class HttpNetworkAdapter[V: JsonValueCodec](
     } catch {
       case e: Exception =>
         logger.error("Failed to send observer update", e)
-        false
     }
   }
 }

@@ -17,7 +17,7 @@ implicit val logger: Logger = LogManager.getLogger("main")
 @main
 def cliMain(clientNum: Int): Unit = {
   logger.info(s"Starting client $clientNum")
-  val localNodeId = NodeId.generateRandom(Some(clientNum))
+  val localNodeId = NodeId.generateRandom(clientNum)
   val bindAddress = InetSocketAddress("localhost", 9000 + clientNum)
   val localNodeInfo = NodeInfo(localNodeId, bindAddress)
 //  val observerAddress = Some(InetSocketAddress("localhost", 3000))

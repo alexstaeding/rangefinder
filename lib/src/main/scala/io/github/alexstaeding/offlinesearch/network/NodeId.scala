@@ -18,8 +18,9 @@ case class NodeId(bytes: Array[Byte])(using val space: NodeIdSpace) {
 
 object NodeId {
 
-  def generateRandom(seed: Option[Int] = None)(using idSpace: NodeIdSpace): NodeId = {
-    val random = seed.map(new util.Random(_)).getOrElse(util.Random())
+  def generateRandom(seed: Int)(using idSpace: NodeIdSpace): NodeId = generateRandom(new util.Random(seed))
+
+  def generateRandom(random: util.Random = new util.Random)(using idSpace: NodeIdSpace): NodeId = {
     val bytes = Array.fill[Byte](idSpace.size)(0)
     random.nextBytes(bytes)
     NodeId(bytes)

@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: operator
+  namespace: offline-search
+  labels:
+    app: operator
+spec:
+  selector:
+    matchLabels:
+      app: operator
+  strategy:
+    type: Recreate
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: operator
+    spec:
+      serviceAccountName: operator
+      containers:
+        - name: operator
+          image: offline-search-operator:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+              hostPort: 80
