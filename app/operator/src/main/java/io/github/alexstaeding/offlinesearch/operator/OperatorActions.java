@@ -5,7 +5,7 @@ import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.NonDeletingOperation;
 import io.github.alexstaeding.offlinesearch.network.NodeId;
 
-public class OperatorActions<A> {
+public class OperatorActions {
 
   private final KubernetesClient client;
 
@@ -39,4 +39,3 @@ public class OperatorActions<A> {
     return true;
   }
 }
-
