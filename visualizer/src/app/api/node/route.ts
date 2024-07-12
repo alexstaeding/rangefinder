@@ -1,9 +1,8 @@
-import {Subject} from "rxjs";
 import {NodeInfoUpdate} from "@/app/api/NodeInfoUpdate";
 import {NextResponse} from "next/server";
 import {isValidBody} from "@/app/api/Validator"
+import {nodeStream} from "@/app/api/NodeStream";
 
-export const nodeStream = new Subject<NodeInfoUpdate>();
 
 export async function PUT(req: Request) {
   let node = isValidBody<NodeInfoUpdate>(await req.json(), ["id", "peers"])

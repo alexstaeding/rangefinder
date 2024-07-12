@@ -1,7 +1,7 @@
 import {NextResponse} from "next/server";
 import {ReadableStreamDefaultController} from "node:stream/web";
-import {nodeStream} from "@/app/api/node/route";
 import {Subscription} from "rxjs";
+import {nodeStream} from "@/app/api/NodeStream";
 
 export async function GET(req: Request, res: NextResponse) {
   let subscription: Subscription | undefined = undefined;
