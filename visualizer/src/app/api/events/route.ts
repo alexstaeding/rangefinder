@@ -3,6 +3,8 @@ import {ReadableStreamDefaultController} from "node:stream/web";
 import {Subscription} from "rxjs";
 import {nodeStream} from "@/app/api/NodeStream";
 
+export const revalidate = 0
+
 export async function GET(req: Request, res: NextResponse) {
   let subscription: Subscription | undefined = undefined;
   const customReadable = new ReadableStream<string>({
