@@ -1,10 +1,9 @@
 "use client"
 
-import ForceGraph from "@/app/graph/forcegraph";
-import {Data} from "@/app/graph/data";
+import ForceGraph from "./forcegraph";
+import {Data, Node} from "./data";
 import {useEffect, useState} from "react";
-import {Node} from "./data";
-import {NodeInfoUpdate} from "@/app/api/NodeInfoUpdate";
+import {NodeInfoUpdate} from "../api/NodeInfoUpdate";
 
 export default function Page() {
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);

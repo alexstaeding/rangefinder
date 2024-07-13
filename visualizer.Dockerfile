@@ -1,25 +1,39 @@
-# Stage 1: Building the application
-FROM node:22-alpine AS builder
+FROM node:22 AS builder
+
 WORKDIR /src
-COPY visualizer /src
+
+# Install dependencies based on the preferred package manager
+COPY visualizer/* /src
 
 RUN yarn install
 RUN yarn build
 
-# Stage 2: Run the application
-FROM node:22-alpine
-
-# Set the working directory in the container
+# Production image, copy all the files and run next
+FROM builder AS runner
 WORKDIR /src
 
-# Copy the build output from the builder stage
-COPY --from=builder /app/next.config.js ./
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules
+ENV NODE_ENV production
 
-# Expose the port Next.js runs on
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+COPY --from=builder /src/public ./public
+
+# Set the correct permission for prerender cache
+RUN mkdir .next
+RUN chown nextjs:nodejs .next
+
+# Automatically leverage output traces to reduce image size
+# https://nextjs.org/docs/advanced-features/output-file-tracing
+COPY --from=builder --chown=nextjs:nodejs /src/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /src/.next/static ./.next/static
+
+USER nextjs
+
 EXPOSE 3000
 
-# Command to run the application
-CMD ["npm", "start"]
+ENV PORT 3000
+
+# server.js is created by next build from the standalone output
+# https://nextjs.org/docs/pages/api-reference/next-config-js/output
+CMD HOSTNAME="0.0.0.0" node server.js

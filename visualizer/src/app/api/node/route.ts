@@ -1,7 +1,7 @@
-import {NodeInfoUpdate} from "@/app/api/NodeInfoUpdate";
+import {NodeInfoUpdate} from "../NodeInfoUpdate";
 import {NextResponse} from "next/server";
-import {isValidBody} from "@/app/api/Validator"
-import {nodeStream} from "@/app/api/NodeStream";
+import {isValidBody} from "../Validator"
+import {nodeStream} from "../NodeStream";
 
 
 export async function PUT(req: Request) {

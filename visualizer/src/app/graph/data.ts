@@ -1,5 +1,5 @@
 import {SimulationLinkDatum, SimulationNodeDatum} from "d3-force";
-import {NodeInfo} from "@/app/api/NodeInfoUpdate";
+import {NodeInfo} from "../api/NodeInfoUpdate";
 
 export interface Node extends SimulationNodeDatum, NodeInfo {
 }

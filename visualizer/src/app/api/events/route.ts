@@ -1,7 +1,7 @@
 import {NextResponse} from "next/server";
 import {ReadableStreamDefaultController} from "node:stream/web";
 import {Subscription} from "rxjs";
-import {nodeStream} from "@/app/api/NodeStream";
+import {nodeStream} from "../NodeStream";
 
 export const revalidate = 0
 
