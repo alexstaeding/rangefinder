@@ -1,9 +1,11 @@
 package io.github.alexstaeding.offlinesearch.operator;
 
 import io.fabric8.kubernetes.api.model.PodBuilder;
+import io.fabric8.kubernetes.api.model.PodFluent;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.NonDeletingOperation;
 import io.github.alexstaeding.offlinesearch.network.NodeId;
+import scala.Option;
 
 public class OperatorActions {
 
@@ -13,22 +15,37 @@ public class OperatorActions {
     this.client = client;
   }
 
-  boolean createNode(NodeId id) {
-    var pod = new PodBuilder()
+  private void configureContainer(PodFluent<PodBuilder>.SpecNested<PodBuilder> spec, NodeId id, Option<String> visualizerUrl) {
+    var ctr = spec.addNewContainer()
+      .withName("headless")
+      .withImage("offline-search-headless:latest")
+      .withImagePullPolicy("Never");
+
+    ctr.addNewEnv()
+      .withName("NODE_ID")
+      .withValue(id.toHex())
+      .endEnv();
+
+    if (visualizerUrl.isDefined()) {
+      ctr.addNewEnv()
+        .withName("VISUALIZER_URL")
+        .withValue(visualizerUrl.get())
+        .endEnv();
+    }
+
+    ctr.endContainer();
+  }
+
+  boolean createNode(NodeId id, Option<String> visualizerUrl) {
+    var spec = new PodBuilder()
       .withNewMetadata()
       .withName("headless-" + id.toHex())
       .endMetadata()
-      .withNewSpec()
-      .addNewContainer()
-      .withName("headless")
-      .withImage("offline-search-headless:latest")
-      .withImagePullPolicy("Never")
-      .addNewEnv()
-      .withName("NODE_ID")
-      .withValue(id.toHex())
-      .endEnv()
-      .endContainer()
-      .endSpec()
+      .withNewSpec();
+
+    configureContainer(spec, id, visualizerUrl);
+
+    var pod = spec.endSpec()
       .build();
 
     client.pods().inNamespace(client.getNamespace()).resource(pod).createOr(NonDeletingOperation::update);

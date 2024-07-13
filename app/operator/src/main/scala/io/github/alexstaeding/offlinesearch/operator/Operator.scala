@@ -39,7 +39,8 @@ class Operator(
 
   private def createNode(): Boolean = {
     val nodeId = NodeId.generateRandom(random)
-    logger.info(s"Creating node with id $nodeId")
-    actions.createNode(nodeId)
+    val visualizerUrl = Option(System.getenv("VISUALIZER_URL"))
+    logger.info(s"Creating node with id $nodeId and visualizer url $visualizerUrl")
+    actions.createNode(nodeId, visualizerUrl)
   }
 }
