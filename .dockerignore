@@ -1,0 +1,9 @@
+visualizer/Dockerfile
+visualizer/.dockerignore
+visualizer/node_modules
+visualizer/npm-debug.log
+visualizer/README.md
+visualizer/.next
+!visualizer/.next/static
+!visualizer/.next/standalone
+visualizer/.git
