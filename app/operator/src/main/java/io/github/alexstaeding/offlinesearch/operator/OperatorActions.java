@@ -15,8 +15,14 @@ public class OperatorActions {
     this.client = client;
   }
 
-  private void configureContainer(PodFluent<PodBuilder>.SpecNested<PodBuilder> spec, NodeId id, Option<String> visualizerUrl) {
-    var ctr = spec.addNewContainer()
+  boolean createNode(NodeId id, Option<String> visualizerUrl) {
+    var podSpec = new PodBuilder()
+      .withNewMetadata()
+      .withName("headless-" + id.toHex())
+      .endMetadata()
+      .withNewSpec();
+
+    var ctr = podSpec.addNewContainer()
       .withName("headless")
       .withImage("offline-search-headless:latest")
       .withImagePullPolicy("Never");
@@ -34,18 +40,8 @@ public class OperatorActions {
     }
 
     ctr.endContainer();
-  }
 
-  boolean createNode(NodeId id, Option<String> visualizerUrl) {
-    var spec = new PodBuilder()
-      .withNewMetadata()
-      .withName("headless-" + id.toHex())
-      .endMetadata()
-      .withNewSpec();
-
-    configureContainer(spec, id, visualizerUrl);
-
-    var pod = spec.endSpec()
+    var pod = podSpec.endSpec()
       .build();
 
     client.pods().inNamespace(client.getNamespace()).resource(pod).createOr(NonDeletingOperation::update);
