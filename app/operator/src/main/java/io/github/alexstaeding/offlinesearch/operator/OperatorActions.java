@@ -3,8 +3,9 @@ package io.github.alexstaeding.offlinesearch.operator;
 import io.fabric8.kubernetes.api.model.IntOrString;
 import io.fabric8.kubernetes.api.model.ServiceBuilder;
 import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
-import io.fabric8.kubernetes.api.model.networking.v1beta1.IngressRule;
-import io.fabric8.kubernetes.api.model.networking.v1beta1.IngressRuleBuilder;
+import io.fabric8.kubernetes.api.model.networking.v1.IngressRule;
+import io.fabric8.kubernetes.api.model.networking.v1.IngressRuleBuilder;
+import io.fabric8.kubernetes.api.model.networking.v1.ServiceBackendPort;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.NonDeletingOperation;
 import io.github.alexstaeding.offlinesearch.network.NodeId;
@@ -112,7 +113,7 @@ public class OperatorActions {
   }
 
   private void addIngressRule(String appName, NodeId id) {
-    var ingress = client.network().ingresses().inNamespace(client.getNamespace()).withName("headless-ingress").get();
+    var ingress = client.network().v1().ingresses().inNamespace(client.getNamespace()).withName("headless-ingress").get();
     if (ingress == null) {
       logger.error("Ingress with name 'headless-ingress' not found");
       return;
@@ -124,10 +125,12 @@ public class OperatorActions {
       .addNewPath()
       .withPath("/" + id.toHex())
       .withNewBackend()
-      .withServiceName(appName)
-      .withNewServicePort()
-      .withValue(new IntOrString(contentPort))
-      .endServicePort()
+      .withNewService()
+      .withName(appName)
+      .withNewPort()
+      .withNumber(contentPort)
+      .endPort()
+      .endService()
       .endBackend()
       .endPath()
       .endHttp()
