@@ -21,7 +21,7 @@ private def requirePort(envName: String): InetSocketAddress =
 @main
 def headlessMain(): Unit = {
 
-  val existingNode = Option(System.getenv("BUDDY_NODE_ID")).map { case s"$id:$host$port" =>
+  val existingNode = Option(System.getenv("BUDDY_NODE_ID")).map { case s"$id:$host:$port" =>
     NodeInfo(
       id = NodeId.fromHex(id).getOrElse { throw new IllegalArgumentException(s"Invalid NodeId: $id") },
       address = InetSocketAddress(host, port.toInt),
@@ -61,6 +61,6 @@ def headlessMain(): Unit = {
     val targetRandomId = NodeId.generateRandom()
     logger.info(s"Sending out random ping to ${targetRandomId.toHex}")
     routing.ping(targetRandomId)
-    Thread.sleep(5000)
+    Thread.sleep(10000)
   }
 }

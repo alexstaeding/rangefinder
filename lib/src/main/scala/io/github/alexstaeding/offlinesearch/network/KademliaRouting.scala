@@ -31,6 +31,9 @@ class KademliaRouting[V: JsonValueCodec](
 
   private val network = networkFactory.create(localNodeInfo.address, observerAddress, KademliaEventReceiver)
 
+  logger.info("Sending initial observer update")
+  network.sendObserverUpdate(NodeInfoUpdate(localNodeInfo.id.toHex, Seq.empty))
+
   private val buckets: mutable.Buffer[KBucket] = new mutable.ArrayDeque[KBucket]
 
   /** The bucket for the zero distance
