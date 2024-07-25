@@ -18,10 +18,17 @@ private def requirePort(envName: String): InetSocketAddress =
   Option(System.getenv(envName)).flatMap(_.toIntOption) match
     case Some(port) => InetSocketAddress(port)
     case None       => throw new IllegalArgumentException(s"$envName environment variable is required")
-
 @main
 def headlessMain(): Unit = {
-  logger.info(s"Starting headless node")
+
+  val existingNode = Option(System.getenv("BUDDY_NODE_ID")).map { case s"$id:$host$port" =>
+    NodeInfo(
+      id = NodeId.fromHex(id).getOrElse { throw new IllegalArgumentException(s"Invalid NodeId: $id") },
+      address = InetSocketAddress(host, port.toInt),
+    )
+  }
+
+  logger.info(s"Starting headless node with buddy node: ${existingNode.map(_.toString).getOrElse("None")}")
 
   val p2pAddress = requirePort("P2P_PORT")
   val contentAddress = requirePort("CONTENT_PORT")
@@ -47,4 +54,13 @@ def headlessMain(): Unit = {
   logger.info(s"Local content keys: ${content.keys.mkString(", ")}")
   val contentBrowser = new ContentBrowser(contentAddress, content)
   val routing = new KademliaRouting[StringIndex](HttpNetworkAdapter, localNodeInfo, observerAddress)
+
+  existingNode.foreach { node => routing.putLocalNode(node.id, node) }
+
+  while (true) {
+    val targetRandomId = NodeId.generateRandom()
+    logger.info(s"Sending out random ping to ${targetRandomId.toHex}")
+    routing.ping(targetRandomId)
+    Thread.sleep(5000)
+  }
 }
