@@ -13,7 +13,7 @@ class Operator(
 )(using logger: Logger) {
 
   private val client = new KubernetesClientBuilder().build()
-  private val actions = new OperatorActions(client)
+  private val actions = new OperatorActions(client, logger)
   private val random = new util.Random
 
   logger.info(s"Connected to Kubernetes API server ${client.getMasterUrl} with API version ${client.getApiVersion}.")
