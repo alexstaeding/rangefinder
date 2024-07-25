@@ -1,0 +1,14 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  labels:
+    app: headless-ingress
+  name: headless-ingress
+  namespace: offline-search
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - thesis.staeding.com
+      secretName: staeding-thesis

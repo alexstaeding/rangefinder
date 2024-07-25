@@ -3,9 +3,12 @@ package io.github.alexstaeding.offlinesearch.operator;
 import io.fabric8.kubernetes.api.model.IntOrString;
 import io.fabric8.kubernetes.api.model.ServiceBuilder;
 import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
+import io.fabric8.kubernetes.api.model.networking.v1beta1.IngressRule;
+import io.fabric8.kubernetes.api.model.networking.v1beta1.IngressRuleBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.NonDeletingOperation;
 import io.github.alexstaeding.offlinesearch.network.NodeId;
+import org.apache.logging.log4j.Logger;
 import scala.Option;
 
 public class OperatorActions {
@@ -14,9 +17,11 @@ public class OperatorActions {
   private static final int contentPort = 80;
 
   private final KubernetesClient client;
+  private final Logger logger;
 
-  public OperatorActions(KubernetesClient client) {
+  public OperatorActions(KubernetesClient client, Logger logger) {
     this.client = client;
+    this.logger = logger;
   }
 
   boolean createNode(NodeId id, Option<String> visualizerUrl) {
@@ -101,7 +106,37 @@ public class OperatorActions {
       .resource(serviceSpec)
       .createOr(NonDeletingOperation::update);
 
+    addIngressRule(appName, id);
+
     return true;
+  }
+
+  private void addIngressRule(String appName, NodeId id) {
+    var ingress = client.network().ingresses().inNamespace(client.getNamespace()).withName("headless-ingress").get();
+    if (ingress == null) {
+      logger.error("Ingress with name 'headless-ingress' not found");
+      return;
+    }
+
+    IngressRule newRule = new IngressRuleBuilder()
+      .withHost("thesis.staeding.com")
+      .withNewHttp()
+      .addNewPath()
+      .withPath("/" + id.toHex())
+      .withNewBackend()
+      .withServiceName(appName)
+      .withNewServicePort()
+      .withValue(new IntOrString(contentPort))
+      .endServicePort()
+      .endBackend()
+      .endPath()
+      .endHttp()
+      .build();
+
+    ingress.edit()
+      .editSpec()
+      .addToRules(newRule);
+    logger.info("Added ingress rule for node {}", id.toHex());
   }
 
   boolean removeNode(NodeId id) {
