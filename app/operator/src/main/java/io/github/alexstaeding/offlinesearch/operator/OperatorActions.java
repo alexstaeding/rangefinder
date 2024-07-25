@@ -113,9 +113,9 @@ public class OperatorActions {
   }
 
   private void addIngressRule(String appName, NodeId id) {
-    var ingress = client.network().v1().ingresses().inNamespace(client.getNamespace()).withName("headless-ingress");
+    var ingress = client.network().v1().ingresses().inNamespace(client.getNamespace()).withName("web-ingress");
     if (ingress.get() == null) {
-      logger.error("Ingress with name 'headless-ingress' not found");
+      logger.error("Ingress with name 'web-ingress' not found");
       return;
     }
 

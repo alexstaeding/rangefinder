@@ -4,7 +4,7 @@ metadata:
   name: visualizer
   namespace: offline-search
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     app: visualizer
   ports:

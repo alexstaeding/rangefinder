@@ -10,7 +10,6 @@ implicit val logger: Logger = LogManager.getLogger("main")
 
 @main
 def operatorMain(): Unit = {
-  println("Foo")
   logger.info("Starting operator...")
   val operator = new Operator(HttpNetworkListener, new InetSocketAddress(80))
 }

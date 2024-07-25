@@ -2,8 +2,8 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   labels:
-    app: headless-ingress
-  name: headless-ingress
+    app: web-ingress
+  name: web-ingress
   namespace: offline-search
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
@@ -17,6 +17,13 @@ spec:
             backend:
               service:
                 name: home
+                port:
+                  number: 80
+          - path: /graph
+            pathType: Exact
+            backend:
+              service:
+                name: visualizer
                 port:
                   number: 80
   tls:
