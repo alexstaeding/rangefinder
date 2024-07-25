@@ -3,9 +3,9 @@ package io.github.alexstaeding.offlinesearch.operator;
 import io.fabric8.kubernetes.api.model.IntOrString;
 import io.fabric8.kubernetes.api.model.ServiceBuilder;
 import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
-import io.fabric8.kubernetes.api.model.networking.v1.IngressRule;
-import io.fabric8.kubernetes.api.model.networking.v1.IngressRuleBuilder;
-import io.fabric8.kubernetes.api.model.networking.v1.ServiceBackendPort;
+import io.fabric8.kubernetes.api.model.networking.v1.HTTPIngressPath;
+import io.fabric8.kubernetes.api.model.networking.v1.HTTPIngressPathBuilder;
+import io.fabric8.kubernetes.api.model.networking.v1.IngressBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.NonDeletingOperation;
 import io.github.alexstaeding.offlinesearch.network.NodeId;
@@ -87,7 +87,7 @@ public class OperatorActions {
       .endMetadata()
       .withNewSpec()
       .addToSelector("app", appName)
-      .withType("LoadBalancer")
+      .withType("ClusterIP")
       .addNewPort()
       .withName("content")
       .withPort(80)
@@ -113,17 +113,15 @@ public class OperatorActions {
   }
 
   private void addIngressRule(String appName, NodeId id) {
-    var ingress = client.network().v1().ingresses().inNamespace(client.getNamespace()).withName("headless-ingress").get();
-    if (ingress == null) {
+    var ingress = client.network().v1().ingresses().inNamespace(client.getNamespace()).withName("headless-ingress");
+    if (ingress.get() == null) {
       logger.error("Ingress with name 'headless-ingress' not found");
       return;
     }
 
-    IngressRule newRule = new IngressRuleBuilder()
-      .withHost("thesis.staeding.com")
-      .withNewHttp()
-      .addNewPath()
-      .withPath("/" + id.toHex())
+    HTTPIngressPath newPath = new HTTPIngressPathBuilder()
+      .withPath("/" + id.toHex() + "/")
+      .withPathType("Prefix")
       .withNewBackend()
       .withNewService()
       .withName(appName)
@@ -132,13 +130,9 @@ public class OperatorActions {
       .endPort()
       .endService()
       .endBackend()
-      .endPath()
-      .endHttp()
       .build();
 
-    ingress.edit()
-      .editSpec()
-      .addToRules(newRule);
+    ingress.edit(i -> new IngressBuilder(i).editSpec().editFirstRule().editHttp().addToPaths(newPath).endHttp().endRule().endSpec().build());
     logger.info("Added ingress rule for node {}", id.toHex());
   }
 
