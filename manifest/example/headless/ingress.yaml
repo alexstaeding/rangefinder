@@ -8,7 +8,17 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
-  rules: []
+  rules:
+    - host: thesis.staeding.com
+      http:
+        paths:
+          - path: /
+            pathType: Exact
+            backend:
+              service:
+                name: home
+                port:
+                  number: 80
   tls:
     - hosts:
         - thesis.staeding.com
