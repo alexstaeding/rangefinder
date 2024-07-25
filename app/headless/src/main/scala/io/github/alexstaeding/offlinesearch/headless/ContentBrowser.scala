@@ -17,8 +17,8 @@ class ContentBrowser(
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(2))
 
   {
-    server.createContext("/browse/", (exchange: HttpExchange) => {
-      val path = exchange.getRequestURI.getPath.split("/").drop(1)
+    server.createContext("/", (exchange: HttpExchange) => {
+      val path = exchange.getRequestURI.getPath.split("/").drop(2)
       if (path.length != 2) {
         val error = "Path should contain exactly one element after '/browse/'"
         exchange.sendResponseHeaders(400, error.length)
