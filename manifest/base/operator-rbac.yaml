@@ -10,14 +10,12 @@ metadata:
   name: access-offline-search
   namespace: offline-search
 rules:
-  - apiGroups:
-      - ""
-    resources:
-      - pods
-      - deployments
-      - services
-    verbs:
-      - '*'
+  - apiGroups: [""]
+    resources: ["pods", "services"]
+    verbs: ["*"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["*"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
