@@ -27,6 +27,7 @@ public class OperatorActions {
       .withNewMetadata()
       .withName("headless-" + id.toHex())
       .withNamespace(client.getNamespace())
+      .addToLabels("app", appName)
       .endMetadata()
       .withNewSpec()
       .withNewSelector()
@@ -34,6 +35,9 @@ public class OperatorActions {
       .endSelector();
 
     var ctr = deploySpec.withNewTemplate()
+      .withNewMetadata()
+      .addToLabels("app", appName)
+      .endMetadata()
       .withNewSpec()
       .addNewContainer()
       .withName("headless")
