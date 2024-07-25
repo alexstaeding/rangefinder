@@ -14,6 +14,8 @@ case class NodeId(bytes: Array[Byte])(using val space: NodeIdSpace) {
   override def canEqual(that: Any): Boolean = that.isInstanceOf[NodeId]
   override def toString: String = toHex.grouped(4).mkString(" ")
   def toHex: String = bytes.map("%02x".format(_)).mkString
+  def toInt: Int = BigInt(bytes).toInt
+  def toLong: Long = BigInt(bytes).toLong
 }
 
 object NodeId {

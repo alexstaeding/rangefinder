@@ -5,7 +5,7 @@ import io.github.alexstaeding.offlinesearch.types.simple.StringIndex
 import org.apache.logging.log4j.{LogManager, Logger}
 
 import java.net.InetSocketAddress
-import scala.util.{CommandLineParser, Failure, Success, Try}
+import scala.util.CommandLineParser
 
 implicit val idSpace: NodeIdSpace = NodeIdSpace(4)
 implicit val logger: Logger = LogManager.getLogger("main")
@@ -29,11 +29,14 @@ def headlessMain(): Unit = {
 
   val observerAddress = Option(System.getenv("OBSERVER_ADDRESS")) match
     case Some(s"$host:$port") => Some(InetSocketAddress(host, port.toInt))
-    case Some(value) => throw new IllegalArgumentException(s"Invalid observer address: '$value', must be in the form 'host:port'")
-    case None => None
+    case Some(value)          => throw new IllegalArgumentException(s"Invalid observer address: '$value', must be in the form 'host:port'")
+    case None                 => None
 
   logger.info(s"localNodeId: '${localNodeId.toHex}' bindAddress: $bindAddress")
   logger.info(s"localInfo: ${localNodeId.toHex},${bindAddress.getHostString},${bindAddress.getPort}")
   // start server threads
+  val content = StringIndex.getContent(localNodeId)
+  logger.info(s"Local content keys: ${content.keys.mkString(", ")}")
+  val contentBrowser = new ContentBrowser(InetSocketAddress(8080), content)
   val routing = new KademliaRouting[StringIndex](HttpNetworkAdapter, localNodeInfo, observerAddress)
 }
