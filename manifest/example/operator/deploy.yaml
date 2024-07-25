@@ -22,9 +22,6 @@ spec:
         - name: operator
           image: offline-search-operator:latest
           imagePullPolicy: Never
-          ports:
-            - containerPort: 80
-              hostPort: 80
           env:
             - name: VISUALIZER_URL
               value: ""

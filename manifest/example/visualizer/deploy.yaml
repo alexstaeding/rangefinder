@@ -17,11 +17,7 @@ spec:
       labels:
         app: visualizer
     spec:
-      serviceAccountName: visualizer
       containers:
         - name: visualizer
           image: offline-search-visualizer:latest
           imagePullPolicy: Never
-          ports:
-            - containerPort: 80
-              hostPort: 80
