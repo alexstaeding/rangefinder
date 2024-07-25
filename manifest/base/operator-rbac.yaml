@@ -7,13 +7,15 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: access-pods
+  name: access-offline-search
   namespace: offline-search
 rules:
   - apiGroups:
       - ""
     resources:
       - pods
+      - deployments
+      - services
     verbs:
       - '*'
 ---
@@ -28,5 +30,5 @@ subjects:
     apiGroup: ""
 roleRef:
   kind: Role
-  name: access-pods
+  name: access-offline-search
   apiGroup: rbac.authorization.k8s.io

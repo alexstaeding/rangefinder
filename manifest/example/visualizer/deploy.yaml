@@ -19,5 +19,4 @@ spec:
     spec:
       containers:
         - name: visualizer
-          image: offline-search-visualizer:latest
-          imagePullPolicy: Never
+          image: images.sourcegrade.org/offline-search/visualizer:latest
