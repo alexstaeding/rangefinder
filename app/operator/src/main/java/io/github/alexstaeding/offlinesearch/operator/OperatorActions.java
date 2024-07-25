@@ -1,5 +1,6 @@
 package io.github.alexstaeding.offlinesearch.operator;
 
+import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.IntOrString;
 import io.fabric8.kubernetes.api.model.ServiceBuilder;
 import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
@@ -9,6 +10,7 @@ import io.fabric8.kubernetes.api.model.networking.v1.IngressBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.NonDeletingOperation;
 import io.github.alexstaeding.offlinesearch.network.NodeId;
+import io.github.alexstaeding.offlinesearch.network.NodeIdSpace;
 import org.apache.logging.log4j.Logger;
 import scala.Option;
 
@@ -19,19 +21,39 @@ public class OperatorActions {
 
   private final KubernetesClient client;
   private final Logger logger;
+  private final NodeIdSpace nodeIdSpace;
 
-  public OperatorActions(KubernetesClient client, Logger logger) {
+  public OperatorActions(KubernetesClient client, Logger logger, NodeIdSpace nodeIdSpace) {
     this.client = client;
     this.logger = logger;
+    this.nodeIdSpace = nodeIdSpace;
   }
 
-  boolean createNode(NodeId id, Option<String> visualizerUrl) {
+  private Option<NodeId> getExistingRandom() {
+    var nodes = client
+      .services()
+      .inNamespace(client.getNamespace())
+      .list()
+      .getItems()
+      .stream()
+      .filter(s -> s.getMetadata().getName().contains("headless"))
+      .toList();
+
+    if (nodes.isEmpty()) {
+      return Option.empty();
+    }
+
+    var service = nodes.get((int) (Math.random() * nodes.size()));
+    return NodeId.fromHex(service.getMetadata().getName().split("-")[1], nodeIdSpace);
+  }
+
+  boolean createNode(NodeId id, Option<String> observerAddress) {
 
     var appName = "headless-" + id.toHex();
 
     var deploySpec = new DeploymentBuilder()
       .withNewMetadata()
-      .withName("headless-" + id.toHex())
+      .withName(appName)
       .withNamespace(client.getNamespace())
       .addToLabels("app", appName)
       .endMetadata()
@@ -64,12 +86,23 @@ public class OperatorActions {
       .withValue(String.valueOf(contentPort))
       .endEnv();
 
-    if (visualizerUrl.isDefined()) {
+    if (observerAddress.isDefined()) {
       ctr.addNewEnv()
-        .withName("VISUALIZER_URL")
-        .withValue(visualizerUrl.get())
+        .withName("OBSERVER_ADDRESS")
+        .withValue(observerAddress.get() + ":80")
         .endEnv();
     }
+
+    var buddy = getExistingRandom();
+    if (buddy.isDefined()) {
+      var hex = buddy.get().toHex();
+      ctr.addNewEnv()
+        .withName("BUDDY_NODE_ID")
+        .withValue(hex + ":headless-" + hex + ":" + p2pPort)
+        .endEnv();
+    }
+
+    logger.info("Starting node with buddy {} and observer {}", buddy, observerAddress);
 
     var deploy = ctr.endContainer().endSpec().endTemplate().endSpec().build();
 

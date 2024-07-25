@@ -28,8 +28,6 @@ def headlessMain(): Unit = {
     )
   }
 
-  logger.info(s"Starting headless node with buddy node: ${existingNode.map(_.toString).getOrElse("None")}")
-
   val p2pAddress = requirePort("P2P_PORT")
   val contentAddress = requirePort("CONTENT_PORT")
 
@@ -46,6 +44,9 @@ def headlessMain(): Unit = {
     case Some(s"$host:$port") => Some(InetSocketAddress(host, port.toInt))
     case Some(value)          => throw new IllegalArgumentException(s"Invalid observer address: '$value', must be in the form 'host:port'")
     case None                 => None
+
+  logger.info(s"Starting headless node with buddy ${existingNode.map(_.toString).getOrElse("None")}" +
+    s" and observer address ${observerAddress.map(_.toString).getOrElse("None")}")
 
   logger.info(s"localNodeId: '${localNodeId.toHex}' bindAddress: $p2pAddress")
   logger.info(s"localInfo: ${localNodeId.toHex},${p2pAddress.getHostString},${p2pAddress.getPort}")
