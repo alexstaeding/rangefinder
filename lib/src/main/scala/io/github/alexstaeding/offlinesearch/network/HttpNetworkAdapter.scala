@@ -109,7 +109,7 @@ class HttpNetworkAdapter[V: JsonValueCodec](
     val request = HttpRequest
       .newBuilder()
       .version(Version.HTTP_1_1)
-      .uri(URI.create(s"http://${observerAddress.get.getAddress.getHostAddress}:${observerAddress.get.getPort}/api/node"))
+      .uri(URI.create(s"http://${observerAddress.get.getAddress.getHostAddress}:${observerAddress.get.getPort}/visualizer/api/node"))
       .header("Content-Type", "application/json")
       .PUT(BodyPublishers.ofString(serializedUpdate))
       .build()

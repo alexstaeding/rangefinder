@@ -15,7 +15,7 @@ export default function Page() {
   const [data, setData] = useState<Data>({nodes: [], links: []})
 
   const connectToEvents = () => {
-    const eventSource = new EventSource("/api/events")
+    const eventSource = new EventSource("/visualizer/api/events")
     console.log("Source: " + eventSource.url)
     eventSource.addEventListener("open", (event: Event) => {
       console.log("Opened: " + event)
