@@ -19,8 +19,8 @@ spec:
                 name: home
                 port:
                   number: 80
-          - path: /graph
-            pathType: Exact
+          - path: /visualizer
+            pathType: Prefix
             backend:
               service:
                 name: visualizer
