@@ -1,6 +1,5 @@
 package io.github.alexstaeding.offlinesearch.operator;
 
-import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.IntOrString;
 import io.fabric8.kubernetes.api.model.ServiceBuilder;
 import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
@@ -97,7 +96,7 @@ public class OperatorActions {
     if (buddy.isDefined()) {
       var hex = buddy.get().toHex();
       ctr.addNewEnv()
-        .withName("BUDDY_NODE_ID")
+        .withName("BUDDY_NODE")
         .withValue(hex + ":headless-" + hex + ":" + p2pPort)
         .endEnv();
     }

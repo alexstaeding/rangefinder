@@ -18,10 +18,11 @@ private def requirePort(envName: String): InetSocketAddress =
   Option(System.getenv(envName)).flatMap(_.toIntOption) match
     case Some(port) => InetSocketAddress(port)
     case None       => throw new IllegalArgumentException(s"$envName environment variable is required")
+
 @main
 def headlessMain(): Unit = {
 
-  val existingNode = Option(System.getenv("BUDDY_NODE_ID")).map { case s"$id:$host:$port" =>
+  val existingNode = Option(System.getenv("BUDDY_NODE")).map { case s"$id:$host:$port" =>
     NodeInfo(
       id = NodeId.fromHex(id).getOrElse { throw new IllegalArgumentException(s"Invalid NodeId: $id") },
       address = InetSocketAddress(host, port.toInt),
