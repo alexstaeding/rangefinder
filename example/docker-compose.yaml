@@ -26,9 +26,35 @@ services:
       OBSERVER_ADDRESS: "visualizer:80"
     ports:
       - "8081:8080"
+  node-2:
+    build:
+      context: ../
+      dockerfile: headless.Dockerfile
+    environment:
+      HOST: "node-2"
+      NODE_ID: "aaaaaaaa"
+      BUDDY_NODE: "00000000:node-0:9400"
+      P2P_PORT: "9400"
+      CONTENT_PORT: "8080"
+      OBSERVER_ADDRESS: "visualizer:80"
+    ports:
+      - "8082:8080"
+  node-3:
+    build:
+      context: ../
+      dockerfile: headless.Dockerfile
+    environment:
+      HOST: "node-3"
+      NODE_ID: "55555555"
+      BUDDY_NODE: "aaaaaaaa:node-2:9400"
+      P2P_PORT: "9400"
+      CONTENT_PORT: "8080"
+      OBSERVER_ADDRESS: "visualizer:80"
+    ports:
+      - "8083:8080"
   visualizer:
     build:
       context: ../
       dockerfile: visualizer.Dockerfile
     ports:
-      - "8082:80"
+      - "9000:80"
