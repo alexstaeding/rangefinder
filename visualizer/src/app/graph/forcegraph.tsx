@@ -11,8 +11,8 @@ interface ForceGraphProps extends Data {
 
 const ForceGraph: React.FC<ForceGraphProps> = ({nodes, links, onNodeClick}) => {
   const svgRef = useRef<SVGSVGElement>(null);
-  const width = 1200;
-  const height = 800;
+  const width = 1800;
+  const height = 1200;
   useEffect(() => {
     const color = d3.scaleOrdinal(d3.schemeCategory10);
 
@@ -25,7 +25,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({nodes, links, onNodeClick}) => {
 
     const simulation = d3.forceSimulation<Node, Link>(nodes)
       .force('link', d3.forceLink<Node, Link>(links).id(d => d.id).distance(300))
-      .force('charge', d3.forceManyBody().strength(-800))
+      .force('charge', d3.forceManyBody().strength(-500))
       .force('x', d3.forceX())
       .force('y', d3.forceY());
 
@@ -54,7 +54,7 @@ const ForceGraph: React.FC<ForceGraphProps> = ({nodes, links, onNodeClick}) => {
     node.append('circle')
       .attr('stroke', '#fff')
       .attr('stroke-width', 1.5)
-      .attr('r', 50)
+      .attr('r', 48)
       .attr('fill', d => color(d.nodeType));
 
     node.append('title')

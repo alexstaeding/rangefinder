@@ -121,7 +121,7 @@ class KademliaRouting[V: JsonValueCodec](
 
   @tailrec
   private def ensureBucketSpace(index: Int): Option[KBucket] = {
-    if (buckets.size + 1 > index) {
+    if (buckets.size > index) {
       if (buckets.isEmpty) {
         Option.when(homeBucket.hasSpace)(homeBucket)
       } else {

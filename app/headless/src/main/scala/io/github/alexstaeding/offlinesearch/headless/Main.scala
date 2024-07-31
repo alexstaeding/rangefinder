@@ -73,10 +73,25 @@ def headlessMain(): Unit = {
 
   existingNode.foreach { node => routing.putLocalNode(node.id, node) }
 
+  Thread.sleep(5000)
+
   while (true) {
     val targetRandomId = NodeId.generateRandom()
     logger.info(s"Sending out random ping to ${targetRandomId.toHex}")
     routing.ping(targetRandomId)
-    Thread.sleep(10000)
+
+    content.foreach((path, document) =>
+      document
+        .filter(x => x.isLetterOrDigit || x.isSpaceChar)
+        .split("\\W+")
+        .groupBy(identity)
+        .view
+        .mapValues(_.length)
+        .foreach { (word, frequency) =>
+          routing.store(OwnedValue(localNodeId, StringIndex(word), path))
+        },
+    )
+
+    Thread.sleep(20000)
   }
 }
