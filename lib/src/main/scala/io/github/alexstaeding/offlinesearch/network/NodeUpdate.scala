@@ -6,6 +6,8 @@ import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 case class NodeInfoUpdate(
     id: String,
     peers: Seq[PeerUpdate],
+    contentUrl: Option[String],
+    contentKeys: Option[Seq[String]],
 )
 
 object NodeInfoUpdate {

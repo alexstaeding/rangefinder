@@ -24,7 +24,7 @@ def headlessMain(): Unit = {
 
   val host = Option(System.getenv("HOST")) match
     case Some(value) => value
-    case None => throw new IllegalArgumentException("HOST environment variable is required")
+    case None        => throw new IllegalArgumentException("HOST environment variable is required")
 
   val existingNode = Option(System.getenv("BUDDY_NODE")).map { case s"$id:$host:$port" =>
     NodeInfo(
@@ -50,8 +50,12 @@ def headlessMain(): Unit = {
     case Some(value)          => throw new IllegalArgumentException(s"Invalid observer address: '$value', must be in the form 'host:port'")
     case None                 => None
 
-  logger.info(s"Starting headless node with buddy ${existingNode.map(_.toString).getOrElse("None")}" +
-    s" and observer address ${observerAddress.map(_.toString).getOrElse("None")}")
+  val externalContentUrl = Option(System.getenv("EXTERNAL_CONTENT_URL")).map(_ + localNodeId.toHex)
+
+  logger.info(
+    s"Starting headless node with buddy ${existingNode.map(_.toString).getOrElse("None")}" +
+      s" and observer address ${observerAddress.map(_.toString).getOrElse("None")}",
+  )
 
   logger.info(s"localNodeId: '${localNodeId.toHex}' bindAddress: $p2pAddress")
   logger.info(s"localInfo: ${localNodeId.toHex},${p2pAddress.getHostString},${p2pAddress.getPort}")
@@ -59,7 +63,13 @@ def headlessMain(): Unit = {
   val content = StringIndex.getContent(localNodeId)
   logger.info(s"Local content keys: ${content.keys.mkString(", ")}")
   val contentBrowser = new ContentBrowser(contentAddress, content)
-  val routing = new KademliaRouting[StringIndex](HttpNetworkAdapter, localNodeInfo, observerAddress)
+  val routing = new KademliaRouting[StringIndex](
+    HttpNetworkAdapter,
+    localNodeInfo,
+    observerAddress,
+    externalContentUrl,
+    Some(content.keys.toSeq),
+  )
 
   existingNode.foreach { node => routing.putLocalNode(node.id, node) }
 

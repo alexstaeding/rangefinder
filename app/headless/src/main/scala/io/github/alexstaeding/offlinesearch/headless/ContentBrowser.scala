@@ -9,7 +9,7 @@ import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService}
 
 class ContentBrowser(
     private val bindAddress: InetSocketAddress,
-    private val content: Map[String, String]
+    private val content: Map[String, String],
 )(using logger: Logger) {
 
   private val server = HttpServer.create(bindAddress, 10)
@@ -18,13 +18,13 @@ class ContentBrowser(
 
   {
     server.createContext("/", (exchange: HttpExchange) => {
-      val path = exchange.getRequestURI.getPath.split("/").drop(2)
+      val path = exchange.getRequestURI.getPath.split("/").dropWhile(_ != "browse")
       if (path.length != 2) {
-        val error = "Path should contain exactly one element after '/browse/'"
+        val error = s"Path should contain exactly one element after '/browse/'. Options: ${content.keys.mkString(", ")}"
         exchange.sendResponseHeaders(400, error.length)
         exchange.getResponseBody.write(error.getBytes)
       } else {
-        val response = content.getOrElse(path(1), "Not found")
+        val response = content.getOrElse(path(1), s"Not found. Options: ${content.keys.mkString(", ")}")
         logger.info(s"Getting content for '${path(1)}' -> '$response'")
         exchange.sendResponseHeaders(200, response.length)
         exchange.getResponseBody.write(response.getBytes)

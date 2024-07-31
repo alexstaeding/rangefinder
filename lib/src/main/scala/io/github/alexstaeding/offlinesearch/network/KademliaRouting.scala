@@ -16,6 +16,8 @@ class KademliaRouting[V: JsonValueCodec](
     private val networkFactory: NetworkAdapter.Factory,
     private val localNodeInfo: NodeInfo,
     private val observerAddress: Option[InetSocketAddress],
+    private val contentUrl: Option[String] = None,
+    private val localContentKeys: Option[Seq[String]] = None,
     private val kMaxSize: Int = 20, // Size of K-Buckets
     private val concurrency: Int = 3, // Number of concurrent searches
 )(using
@@ -32,7 +34,7 @@ class KademliaRouting[V: JsonValueCodec](
   private val network = networkFactory.create(localNodeInfo.address, observerAddress, KademliaEventReceiver)
 
   logger.info("Sending initial observer update")
-  network.sendObserverUpdate(NodeInfoUpdate(localNodeInfo.id.toHex, Seq.empty))
+  network.sendObserverUpdate(NodeInfoUpdate(localNodeInfo.id.toHex, Seq.empty, contentUrl, localContentKeys))
 
   private val buckets: mutable.Buffer[KBucket] = new mutable.ArrayDeque[KBucket]
 
@@ -158,7 +160,7 @@ class KademliaRouting[V: JsonValueCodec](
   private def sendObserverUpdate(): Unit = {
     val nodes = (homeBucket +: buckets.to(LazyList)).flatMap(_.nodes.keys).map(x => PeerUpdate(x.toHex, "node"))
     val values = (homeBucket +: buckets.to(LazyList)).flatMap(_.values.keys).map(x => PeerUpdate(x.toHex, "value"))
-    network.sendObserverUpdate(NodeInfoUpdate(localNodeInfo.id.toHex, nodes ++ values))
+    network.sendObserverUpdate(NodeInfoUpdate(localNodeInfo.id.toHex, nodes ++ values, contentUrl, localContentKeys))
   }
 
   private def getClosest(targetId: NodeId): Seq[NodeInfo] = {

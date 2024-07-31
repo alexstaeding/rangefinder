@@ -33,7 +33,9 @@ export default function Page() {
         if (!oldData.nodes.some(n => n.id == update.id)) {
           newData.nodes.push({
             id: update.id,
-            nodeType: "node"
+            nodeType: "node",
+            contentUrl: update.contentUrl,
+            contentKeys: update.contentKeys,
           })
         }
 
@@ -78,7 +80,9 @@ export default function Page() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-24">
       <ForceGraph {...data} onNodeClick={handleNodeClick}></ForceGraph>
-      <p>Name: {selectedNode?.id}</p>
+      <p>
+        Name: {selectedNode?.id}
+      </p>
     </main>
   );
 }

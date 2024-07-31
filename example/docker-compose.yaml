@@ -10,6 +10,7 @@ services:
       NODE_ID: "00000000"
       P2P_PORT: "9400"
       CONTENT_PORT: "8080"
+      EXTERNAL_CONTENT_URL: "http://localhost:8080/"
       OBSERVER_ADDRESS: "visualizer:80"
     ports:
       - "8080:8080"
@@ -23,6 +24,7 @@ services:
       BUDDY_NODE: "00000000:node-0:9400"
       P2P_PORT: "9400"
       CONTENT_PORT: "8080"
+      EXTERNAL_CONTENT_URL: "http://localhost:8081/"
       OBSERVER_ADDRESS: "visualizer:80"
     ports:
       - "8081:8080"
@@ -36,6 +38,7 @@ services:
       BUDDY_NODE: "00000000:node-0:9400"
       P2P_PORT: "9400"
       CONTENT_PORT: "8080"
+      EXTERNAL_CONTENT_URL: "http://localhost:8082/"
       OBSERVER_ADDRESS: "visualizer:80"
     ports:
       - "8082:8080"
@@ -49,6 +52,7 @@ services:
       BUDDY_NODE: "aaaaaaaa:node-2:9400"
       P2P_PORT: "9400"
       CONTENT_PORT: "8080"
+      EXTERNAL_CONTENT_URL: "http://localhost:8083/"
       OBSERVER_ADDRESS: "visualizer:80"
     ports:
       - "8083:8080"
