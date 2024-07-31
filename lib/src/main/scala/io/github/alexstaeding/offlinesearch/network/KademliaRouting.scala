@@ -31,16 +31,16 @@ class KademliaRouting[V: JsonValueCodec](
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 
-  private val network = networkFactory.create(localNodeInfo.address, observerAddress, KademliaEventReceiver)
-
-  logger.info("Sending initial observer update")
-  network.sendObserverUpdate(NodeInfoUpdate(localNodeInfo.id.toHex, Seq.empty, contentUrl, localContentKeys))
+  private val network = networkFactory.create(InetSocketAddress(localNodeInfo.address.getPort), observerAddress, KademliaEventReceiver)
 
   private val buckets: mutable.Buffer[KBucket] = new mutable.ArrayDeque[KBucket]
 
   /** The bucket for the zero distance
     */
   private val homeBucket: KBucket = new KBucket
+
+  logger.info("Sending initial observer update")
+  network.sendObserverUpdate(NodeInfoUpdate(localNodeInfo.id.toHex, Seq.empty, contentUrl, localContentKeys))
 
   private def distanceLeadingZeros(id: NodeId): Int = {
     val distance = localNodeInfo.id.xor(id)
