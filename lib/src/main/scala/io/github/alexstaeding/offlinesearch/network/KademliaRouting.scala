@@ -169,6 +169,7 @@ class KademliaRouting[V: JsonValueCodec](
         .to(LazyList)
         .sortBy(_._1)(using NodeId.DistanceOrdering(targetId))
         .map(_._2)
+        .filterNot(_.id == localNodeInfo.id)
         .take(concurrency)
     } else {
       // TODO: Optimize by iteratively looking at buckets, starting with the closest
@@ -176,6 +177,7 @@ class KademliaRouting[V: JsonValueCodec](
         .flatMap(_.nodes.toSeq)
         .sortBy(_._1)(using NodeId.DistanceOrdering(targetId))
         .map(_._2)
+        .filterNot(_.id == localNodeInfo.id)
         .take(concurrency)
     }
   }

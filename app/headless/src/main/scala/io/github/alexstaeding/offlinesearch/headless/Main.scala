@@ -14,13 +14,17 @@ given parser: CommandLineParser.FromString[NodeId] with
   override def fromString(s: String): NodeId = NodeId.fromHex(s).getOrElse { throw new IllegalArgumentException(s"Invalid NodeId: $s") }
   override def fromStringOption(s: String): Option[NodeId] = NodeId.fromHex(s)
 
-private def requirePort(envName: String): InetSocketAddress =
+private def requirePort(host: String, envName: String): InetSocketAddress =
   Option(System.getenv(envName)).flatMap(_.toIntOption) match
-    case Some(port) => InetSocketAddress(port)
+    case Some(port) => InetSocketAddress(host, port)
     case None       => throw new IllegalArgumentException(s"$envName environment variable is required")
 
 @main
 def headlessMain(): Unit = {
+
+  val host = Option(System.getenv("HOST")) match
+    case Some(value) => value
+    case None => throw new IllegalArgumentException("HOST environment variable is required")
 
   val existingNode = Option(System.getenv("BUDDY_NODE")).map { case s"$id:$host:$port" =>
     NodeInfo(
@@ -29,8 +33,8 @@ def headlessMain(): Unit = {
     )
   }
 
-  val p2pAddress = requirePort("P2P_PORT")
-  val contentAddress = requirePort("CONTENT_PORT")
+  val p2pAddress = requirePort(host, "P2P_PORT")
+  val contentAddress = requirePort(host, "CONTENT_PORT")
 
   val localNodeId = Option(System.getenv("NODE_ID")) match
     case Some(value) =>
