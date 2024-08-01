@@ -39,6 +39,12 @@ class KademliaRouting[V: JsonValueCodec](
     */
   private val homeBucket: KBucket = new KBucket
 
+  private def verifyTargetPeer(targetPeer: NodeInfo): Unit = {
+    if (targetPeer.id != localNodeInfo.id) {
+      throw IllegalArgumentException(s"Target peer ID ${targetPeer.id} does not match local ID ${localNodeInfo.id}")
+    }
+  }
+
   logger.info("Sending initial observer update")
   network.sendObserverUpdate(NodeInfoUpdate(localNodeInfo.id.toHex, Seq.empty, contentUrl, localContentKeys))
 
@@ -166,12 +172,12 @@ class KademliaRouting[V: JsonValueCodec](
   private def getClosest(targetId: NodeId): Seq[NodeInfo] = {
     val distance = distanceLeadingZeros(targetId)
     val bucket = getKBucket(distance)
-    if (bucket.size >= concurrency) {
+    val result = if (bucket.size >= concurrency) {
       bucket.nodes
         .to(LazyList)
         .sortBy(_._1)(using NodeId.DistanceOrdering(targetId))
         .map(_._2)
-        .filterNot(_.id == localNodeInfo.id)
+        .filterNot { info => info.id == localNodeInfo.id || info.address == localNodeInfo.address }
         .take(concurrency)
     } else {
       // TODO: Optimize by iteratively looking at buckets, starting with the closest
@@ -179,9 +185,11 @@ class KademliaRouting[V: JsonValueCodec](
         .flatMap(_.nodes.toSeq)
         .sortBy(_._1)(using NodeId.DistanceOrdering(targetId))
         .map(_._2)
-        .filterNot(_.id == localNodeInfo.id)
+        .filterNot { info => info.id == localNodeInfo.id || info.address == localNodeInfo.address }
         .take(concurrency)
     }
+    logger.info("Closest nodes: " + result.map(_.id.toHex).mkString(", "))
+    result
   }
 
   private def getClosestBetterThan(targetId: NodeId, than: NodeId): Seq[NodeInfo] =
@@ -229,7 +237,7 @@ class KademliaRouting[V: JsonValueCodec](
         answer
       }
       .flatMap {
-        case Left(RedirectEvent(requestId, closerTargetInfo)) =>
+        case Left(RedirectEvent(requestId, targetPeer, closerTargetInfo)) =>
           logger.info(s"Redirecting Request($requestId) to closer target: $closerTargetInfo")
           remoteCall(closerTargetInfo.address, originator)
         case Right(value) => Future.successful(value.content)
@@ -241,12 +249,12 @@ class KademliaRouting[V: JsonValueCodec](
       case Some(_) => Future.successful(true)
       case _ =>
         getLocalNode(targetId) match
-          case Some(node) => remoteCall(node.address, RequestEvent.createPing(localNodeInfo, targetId))
+          case Some(node) => remoteCall(node.address, RequestEvent.createPing(localNodeInfo, targetId, node))
           case _ =>
             Future
-              .find(getClosest(targetId).map { case nodeInfo @ NodeInfo(_, address) =>
-                remoteCall(address, RequestEvent.createPing(localNodeInfo, targetId)).recover { exception =>
-                  logger.error(s"Failed to send remote ping to $nodeInfo", exception)
+              .find(getClosest(targetId).map { case nextHopPeer @ NodeInfo(_, address) =>
+                remoteCall(address, RequestEvent.createPing(localNodeInfo, targetId, nextHopPeer)).recover { exception =>
+                  logger.error(s"Failed to send remote ping to $nextHopPeer", exception)
                   false
                 }
               })(identity)
@@ -263,9 +271,9 @@ class KademliaRouting[V: JsonValueCodec](
     val targetId = hashingAlgorithm.hash(rootKey)
     logger.info(s"Determined hash for rootKey $rootKey -> ${targetId.toHex}")
     Future
-      .find(getClosest(targetId).map { case nodeInfo @ NodeInfo(_, address) =>
-        remoteCall(address, RequestEvent.createStoreValue(localNodeInfo, targetId, ownedValue)).recover { exception =>
-          logger.error(s"Failed to send remote store to $nodeInfo", exception)
+      .find(getClosest(targetId).map { case nextHopPeer @ NodeInfo(_, address) =>
+        remoteCall(address, RequestEvent.createStoreValue(localNodeInfo, targetId, nextHopPeer, ownedValue)).recover { exception =>
+          logger.error(s"Failed to send remote store to $nextHopPeer", exception)
           false
         }
       })(identity)
@@ -295,9 +303,9 @@ class KademliaRouting[V: JsonValueCodec](
       case None =>
         logger.info(s"Looking for remote index group")
         Future
-          .find(getClosest(targetId).map { case nodeInfo @ NodeInfo(_, address) =>
-            remoteCall(address, RequestEvent.createSearch(localNodeInfo, targetId, searchKey)).recover { exception =>
-              logger.error(s"Failed to send remote search $nodeInfo", exception)
+          .find(getClosest(targetId).map { case nextHopPeer @ NodeInfo(_, address) =>
+            remoteCall(address, RequestEvent.createSearch(localNodeInfo, targetId, nextHopPeer, searchKey)).recover { exception =>
+              logger.error(s"Failed to send remote search $nextHopPeer", exception)
               None
             }
           })(_.isDefined)

@@ -33,7 +33,7 @@ class HttpNetworkAdapter[V: JsonValueCodec](
         val response: String = processRequest(request)
           .recover { case e: Exception =>
             logger.error("Failed to process request", e)
-            Right(ErrorEvent(request.requestId, s"Internal server error: ${e.getClass} ${e.getMessage}"))
+            Right(ErrorEvent(request.requestId, request.sourceInfo, s"Internal server error: ${e.getClass} ${e.getMessage}"))
           }
           .map(serializeAnswer)
           .recover { case e: Exception =>
@@ -82,7 +82,6 @@ class HttpNetworkAdapter[V: JsonValueCodec](
       .POST(BodyPublishers.ofString(body))
       .build()
 
-    logger.info(s"Created request: $request with body: $body")
     client
       .sendAsync(request, BodyHandlers.ofString())
       .thenApply { response =>
@@ -93,7 +92,7 @@ class HttpNetworkAdapter[V: JsonValueCodec](
         case redirect: RedirectEvent[V] => Left(redirect)
         case answer =>
           answer match
-            case ErrorEvent(_, message) => throw new RuntimeException(message)
+            case ErrorEvent(_, _, message) => throw new RuntimeException(message)
             case _                      => Right(answer.asInstanceOf[A])
       }
       .asScala
@@ -113,8 +112,6 @@ class HttpNetworkAdapter[V: JsonValueCodec](
       .header("Content-Type", "application/json")
       .PUT(BodyPublishers.ofString(serializedUpdate))
       .build()
-
-    logger.info(s"Request: $request")
 
     try {
       client.send(request, BodyHandlers.ofString()).statusCode() == 200
