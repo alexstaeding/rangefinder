@@ -2,13 +2,13 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: operator
-  namespace: offline-search
+  namespace: rangefinder
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: access-offline-search
-  namespace: offline-search
+  name: access-rangefinder
+  namespace: rangefinder
 rules:
   - apiGroups: [""]
     resources: ["pods", "services"]
@@ -24,12 +24,12 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: operator
-  namespace: offline-search
+  namespace: rangefinder
 subjects:
   - kind: ServiceAccount
     name: operator
     apiGroup: ""
 roleRef:
   kind: Role
-  name: access-offline-search
+  name: access-rangefinder
   apiGroup: rbac.authorization.k8s.io

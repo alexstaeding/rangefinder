@@ -1,4 +1,4 @@
-name: offline-search
+name: rangefinder
 
 services:
   node-0:

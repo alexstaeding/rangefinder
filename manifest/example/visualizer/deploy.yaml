@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: visualizer
-  namespace: offline-search
+  namespace: rangefinder
   labels:
     app: visualizer
 spec:
@@ -19,4 +19,4 @@ spec:
     spec:
       containers:
         - name: visualizer
-          image: images.sourcegrade.org/offline-search/visualizer:latest
+          image: images.sourcegrade.org/rangefinder/visualizer:latest

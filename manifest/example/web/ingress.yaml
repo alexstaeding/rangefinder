@@ -4,7 +4,7 @@ metadata:
   labels:
     app: web-ingress
   name: web-ingress
-  namespace: offline-search
+  namespace: rangefinder
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:

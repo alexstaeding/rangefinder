@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: operator
-  namespace: offline-search
+  namespace: rangefinder
   labels:
     app: operator
 spec:
@@ -20,7 +20,7 @@ spec:
       serviceAccountName: operator
       containers:
         - name: operator
-          image: images.sourcegrade.org/offline-search/operator:latest
+          image: images.sourcegrade.org/rangefinder/operator:latest
           env:
             - name: VISUALIZER_URL
               value: "visualizer"

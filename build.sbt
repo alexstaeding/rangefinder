@@ -42,21 +42,21 @@ lazy val types = (project in file("types"))
 lazy val cli = (project in file("app/cli"))
   .settings(
     name := "app-cli",
-    assembly / mainClass := Some("io.github.alexstaeding.offlinesearch.cli.cliMain"),
+    assembly / mainClass := Some("io.github.alexstaeding.rangefinder.cli.cliMain"),
   )
   .dependsOn(lib, types)
 
 lazy val headless = (project in file("app/headless"))
   .settings(
     name := "app-headless",
-    assembly / mainClass := Some("io.github.alexstaeding.offlinesearch.headless.headlessMain"),
+    assembly / mainClass := Some("io.github.alexstaeding.rangefinder.headless.headlessMain"),
   )
   .dependsOn(lib, types)
 
 lazy val operator = (project in file("app/operator"))
   .settings(
     name := "app-operator",
-    assembly / mainClass := Some("io.github.alexstaeding.offlinesearch.operator.operatorMain"),
+    assembly / mainClass := Some("io.github.alexstaeding.rangefinder.operator.operatorMain"),
     libraryDependencies ++= Seq(
       "io.fabric8" % "kubernetes-client" % "6.13.1",
       "io.fabric8" % "crd-generator-apt" % "6.13.1" % "provided",
@@ -71,6 +71,6 @@ lazy val operator = (project in file("app/operator"))
 
 lazy val root = (project in file("."))
   .settings(
-    name := "offline-search",
+    name := "rangefinder",
   )
   .aggregate(lib, discovery, cli)

@@ -2,11 +2,11 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: home
-  namespace: offline-search
+  namespace: rangefinder
 data:
   index.html: |
     <html lang="en-US">
-    <title>Offline Search Home</title>
+    <title>Rangefinder Home</title>
     <body>
     Use /[node-id]/browse/
     </body>
@@ -16,7 +16,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: home
-  namespace: offline-search
+  namespace: rangefinder
 spec:
   replicas: 1
   selector:
@@ -47,7 +47,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: home
-  namespace: offline-search
+  namespace: rangefinder
 spec:
   type: ClusterIP
   selector:

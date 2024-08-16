@@ -1,0 +1,46 @@
+package io.github.alexstaeding.rangefinder.operator
+
+import io.fabric8.kubernetes.client.KubernetesClientBuilder
+import io.github.alexstaeding.rangefinder.network.NodeId
+import org.apache.logging.log4j.Logger
+
+import java.net.InetSocketAddress
+import java.util
+
+class Operator(
+    private val networkListener: NetworkListener,
+    private val bindAddress: InetSocketAddress,
+)(using logger: Logger) {
+
+  private val client = new KubernetesClientBuilder().build()
+  private val actions = new OperatorActions(client, logger, idSpace)
+  private val random = new util.Random
+
+  logger.info(s"Connected to Kubernetes API server ${client.getMasterUrl} with API version ${client.getApiVersion}.")
+  logger.info(s"In namespace ${client.getNamespace}.")
+
+  networkListener.register(
+    bindAddress,
+    new EventReceiver {
+      override def receiveAddNode(): Boolean =
+        try createNode()
+        catch
+          case e: Exception =>
+            logger.error("Failed to create node", e)
+            false
+      override def receiveRemoveNode(id: NodeId): Boolean =
+        try actions.removeNode(id)
+        catch
+          case e: Exception =>
+            logger.error(s"Failed to remove node $id", e)
+            false
+    },
+  )
+
+  private def createNode(): Boolean = {
+    val nodeId = NodeId.generateRandom(random)
+    val visualizerUrl = Option(System.getenv("VISUALIZER_URL"))
+    logger.info(s"Creating node with id $nodeId and visualizer url $visualizerUrl")
+    actions.createNode(nodeId, visualizerUrl)
+  }
+}
