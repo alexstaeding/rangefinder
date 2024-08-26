@@ -31,7 +31,7 @@ class KademliaRouting[V: JsonValueCodec](
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 
-  private val network = networkFactory.create(InetSocketAddress(localNodeInfo.address.getPort), observerAddress, KademliaEventReceiver)
+  private val network = networkFactory.create(InetSocketAddress(localNodeInfo.address.getPort), observerAddress, KademliaEventHandler$)
 
   private val buckets: mutable.Buffer[KBucket] = new mutable.ArrayDeque[KBucket]
 
@@ -70,8 +70,8 @@ class KademliaRouting[V: JsonValueCodec](
       .collect { case (key, _) if distanceLeadingZeros(key) == partitionIndex => key }
       .foreach { key => destination.put(key, source.remove(key).get) }
 
-  private object KademliaEventReceiver extends EventReceiver[V] {
-    override def receivePing(request: PingEvent[V]): Either[RedirectEvent[V], PingAnswerEvent[V]] = {
+  private object KademliaEventHandler$ extends EventHandler[V] {
+    override def handlePing(request: PingEvent[V]): Either[RedirectEvent[V], PingAnswerEvent[V]] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       if (request.targetId == localNodeInfo.id) {
         request.createAnswer(true)
@@ -88,7 +88,7 @@ class KademliaRouting[V: JsonValueCodec](
       }
     }
 
-    override def receiveFindNode(request: FindNodeEvent[V]): Either[RedirectEvent[V], FindNodeAnswerEvent[V]] = {
+    override def handleFindNode(request: FindNodeEvent[V]): Either[RedirectEvent[V], FindNodeAnswerEvent[V]] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       if (request.targetId == localNodeInfo.id) {
         request.createAnswer(true)
@@ -102,7 +102,7 @@ class KademliaRouting[V: JsonValueCodec](
       }
     }
 
-    override def receiveSearch(request: SearchEvent[V]): Either[RedirectEvent[V], SearchAnswerEvent[V]] = {
+    override def handleSearch(request: SearchEvent[V]): Either[RedirectEvent[V], SearchAnswerEvent[V]] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       getLocalValue(request.targetId) match
         case Some(indexGroup) =>
@@ -115,7 +115,7 @@ class KademliaRouting[V: JsonValueCodec](
             case _                           => request.createAnswer(None)
     }
 
-    override def receiveStoreValue(request: StoreValueEvent[V]): Either[RedirectEvent[V], StoreValueAnswerEvent[V]] = {
+    override def handleStoreValue(request: StoreValueEvent[V]): Either[RedirectEvent[V], StoreValueAnswerEvent[V]] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       val localSuccess = putLocalValue(request.targetId, request.value)
       logger.info(s"Stored value ${request.value.value} at id ${request.targetId} locally: $localSuccess")

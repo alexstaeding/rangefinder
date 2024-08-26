@@ -17,7 +17,7 @@ import scala.util.Try
 class HttpNetworkAdapter[V: JsonValueCodec](
     private val bindAddress: InetSocketAddress,
     private val observerAddress: Option[InetSocketAddress],
-    private val onReceive: EventReceiver[V],
+    private val onReceive: EventHandler[V],
 )(using logger: Logger)
     extends NetworkAdapter[V] {
 
@@ -25,41 +25,40 @@ class HttpNetworkAdapter[V: JsonValueCodec](
   private val server = HttpServer.create(bindAddress, 10)
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 
-  {
-    server.createContext(
-      "/api/v1/message",
-      (exchange: HttpExchange) => {
-        val request = readFromStream(exchange.getRequestBody)(using RequestEvent.codec)
-        val response: String = processRequest(request)
-          .recover { case e: Exception =>
-            logger.error("Failed to process request", e)
-            Right(ErrorEvent(request.requestId, request.sourceInfo, s"Internal server error: ${e.getClass} ${e.getMessage}"))
-          }
-          .map(serializeAnswer)
-          .recover { case e: Exception =>
-            logger.error("Failed to serialize response", e)
-            """{"type":"ErrorEvent"}"""
-          }.get
+  server.createContext(
+    "/api/v1/message",
+    (exchange: HttpExchange) => {
+      val request = readFromStream(exchange.getRequestBody)(using RequestEvent.codec)
+      val response: String = processRequest(request)
+        .recover { case e: Exception =>
+          logger.error("Failed to process request", e)
+          Right(ErrorEvent(request.requestId, request.sourceInfo, s"Internal server error: ${e.getClass} ${e.getMessage}"))
+        }
+        .map(serializeAnswer)
+        .recover { case e: Exception =>
+          logger.error("Failed to serialize response", e)
+          """{"type":"ErrorEvent"}"""
+        }
+        .get
 
-        logger.info(s"Received message $request and sending response $response")
+      logger.info(s"Received message $request and sending response $response")
 
-        exchange.sendResponseHeaders(200, response.length)
-        exchange.getResponseBody.write(response.getBytes)
-        exchange.close()
-      },
-    )
-    server.setExecutor(ec)
-    server.start()
-    logger.info("Started server on " + bindAddress)
-  }
+      exchange.sendResponseHeaders(200, response.length)
+      exchange.getResponseBody.write(response.getBytes)
+      exchange.close()
+    },
+  )
+  server.setExecutor(ec)
+  server.start()
+  logger.info("Started server on " + bindAddress)
 
   private def processRequest(request: RequestEvent[V]): Try[Either[RedirectEvent[V], AnswerEvent[V]]] =
     Try {
       request match
-        case pingEvent: PingEvent[V]             => onReceive.receivePing(pingEvent)
-        case findNodeEvent: FindNodeEvent[V]     => onReceive.receiveFindNode(findNodeEvent)
-        case findValueEvent: SearchEvent[V]      => onReceive.receiveSearch(findValueEvent)
-        case storeValueEvent: StoreValueEvent[V] => onReceive.receiveStoreValue(storeValueEvent)
+        case pingEvent: PingEvent[V]             => onReceive.handlePing(pingEvent)
+        case findNodeEvent: FindNodeEvent[V]     => onReceive.handleFindNode(findNodeEvent)
+        case findValueEvent: SearchEvent[V]      => onReceive.handleSearch(findValueEvent)
+        case storeValueEvent: StoreValueEvent[V] => onReceive.handleStoreValue(storeValueEvent)
     }
 
   private def serializeAnswer(answer: Either[RedirectEvent[V], AnswerEvent[V]]): String = {
@@ -69,10 +68,7 @@ class HttpNetworkAdapter[V: JsonValueCodec](
       case Right(answer)  => writeToString(answer)(using AnswerEvent.codec)
   }
 
-  override def send[A <: AnswerEvent[V], R <: RequestEvent[V] { type Answer <: A }](
-      nextHop: InetSocketAddress,
-      event: R,
-  ): Future[Either[RedirectEvent[V], A]] = {
+  override def send[R <: RequestEvent[V]](nextHop: InetSocketAddress, event: R): Future[Either[RedirectEvent[V], R#Answer]] = {
     logger.info(s"Sending message $event to $nextHop")
     val body = writeToString(event)(using RequestEvent.codec)
     val request = HttpRequest
@@ -93,7 +89,7 @@ class HttpNetworkAdapter[V: JsonValueCodec](
         case answer =>
           answer match
             case ErrorEvent(_, _, message) => throw new RuntimeException(message)
-            case _                      => Right(answer.asInstanceOf[A])
+            case _                         => Right(answer.asInstanceOf[R#Answer])
       }
       .asScala
   }
@@ -126,6 +122,6 @@ object HttpNetworkAdapter extends NetworkAdapter.Factory {
   def create[V: JsonValueCodec](
       bindAddress: InetSocketAddress,
       observerAddress: Option[InetSocketAddress],
-      onReceive: EventReceiver[V],
+      onReceive: EventHandler[V],
   )(using logger: Logger): NetworkAdapter[V] = HttpNetworkAdapter(bindAddress, observerAddress, onReceive)
 }
