@@ -4,20 +4,17 @@ import com.github.plokhotnyuk.jsoniter_scala.core.*
 import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
 import org.apache.logging.log4j.Logger
 
-import java.net.http.HttpClient.Version
-import java.net.http.HttpRequest.BodyPublishers
+import java.net.InetSocketAddress
 import java.net.http.HttpResponse.BodyHandlers
 import java.net.http.{HttpClient, HttpRequest, HttpResponse}
-import java.net.{InetSocketAddress, URI}
 import java.util.concurrent.Executors
 import scala.concurrent.*
 import scala.jdk.FutureConverters.CompletionStageOps
-import scala.util.Try
 
 class HttpNetworkAdapter[V: JsonValueCodec](
     private val bindAddress: InetSocketAddress,
     private val observerAddress: Option[InetSocketAddress],
-    private val onReceive: EventHandler[V],
+    private val eventHandler: EventHandler[V],
 )(using logger: Logger)
     extends NetworkAdapter[V] {
 
@@ -28,55 +25,20 @@ class HttpNetworkAdapter[V: JsonValueCodec](
   server.createContext(
     "/api/v1/message",
     (exchange: HttpExchange) => {
-      val request = readFromStream(exchange.getRequestBody)(using RequestEvent.codec)
-      val response: String = processRequest(request)
-        .recover { case e: Exception =>
-          logger.error("Failed to process request", e)
-          Right(ErrorEvent(request.requestId, request.sourceInfo, s"Internal server error: ${e.getClass} ${e.getMessage}"))
-        }
-        .map(serializeAnswer)
-        .recover { case e: Exception =>
-          logger.error("Failed to serialize response", e)
-          """{"type":"ErrorEvent"}"""
-        }
-        .get
-
-      logger.info(s"Received message $request and sending response $response")
-
-      exchange.sendResponseHeaders(200, response.length)
-      exchange.getResponseBody.write(response.getBytes)
-      exchange.close()
+      HttpHelper.receiveRequest(exchange, eventHandler, readFromStream(exchange.getRequestBody)(using RequestEvent.codec))
     },
   )
   server.setExecutor(ec)
   server.start()
   logger.info("Started server on " + bindAddress)
 
-  private def processRequest(request: RequestEvent[V]): Try[Either[RedirectEvent[V], AnswerEvent[V]]] =
-    Try {
-      request match
-        case pingEvent: PingEvent[V]             => onReceive.handlePing(pingEvent)
-        case findNodeEvent: FindNodeEvent[V]     => onReceive.handleFindNode(findNodeEvent)
-        case findValueEvent: SearchEvent[V]      => onReceive.handleSearch(findValueEvent)
-        case storeValueEvent: StoreValueEvent[V] => onReceive.handleStoreValue(storeValueEvent)
-    }
-
-  private def serializeAnswer(answer: Either[RedirectEvent[V], AnswerEvent[V]]): String = {
-    logger.info(s"Serializing answer $answer")
-    answer match
-      case Left(redirect) => writeToString(redirect)(using AnswerEvent.codec)
-      case Right(answer)  => writeToString(answer)(using AnswerEvent.codec)
-  }
-
-  override def send[R <: RequestEvent[V]](nextHop: InetSocketAddress, event: R): Future[Either[RedirectEvent[V], R#Answer]] = {
+  override def send[A <: AnswerEvent[V], R <: RequestEvent[V] { type Answer <: A }](
+      nextHop: InetSocketAddress,
+      event: R,
+  ): Future[Either[RedirectEvent[V], A]] = {
     logger.info(s"Sending message $event to $nextHop")
     val body = writeToString(event)(using RequestEvent.codec)
-    val request = HttpRequest
-      .newBuilder()
-      .version(Version.HTTP_1_1)
-      .uri(URI.create(s"http://${nextHop.getAddress.getHostAddress}:${nextHop.getPort}/api/v1/message"))
-      .POST(BodyPublishers.ofString(body))
-      .build()
+    val request = HttpHelper.sendJsonPost(nextHop, "/api/v1/message", body)
 
     client
       .sendAsync(request, BodyHandlers.ofString())
@@ -84,38 +46,14 @@ class HttpNetworkAdapter[V: JsonValueCodec](
         logger.info("Received response: " + response)
         readFromString(response.body())(using AnswerEvent.codec)
       }
-      .thenApply {
-        case redirect: RedirectEvent[V] => Left(redirect)
-        case answer =>
-          answer match
-            case ErrorEvent(_, _, message) => throw new RuntimeException(message)
-            case _                         => Right(answer.asInstanceOf[R#Answer])
+      .thenApply { x =>
+        x.asInstanceOf[A].extractRedirect()
       }
       .asScala
   }
 
-  override def sendObserverUpdate(update: NodeInfoUpdate): Unit = {
-    if (observerAddress.isEmpty) {
-      return
-    }
-
-    val serializedUpdate = writeToString(update)
-    logger.info(s"Sending observer update $serializedUpdate")
-    val request = HttpRequest
-      .newBuilder()
-      .version(Version.HTTP_1_1)
-      .uri(URI.create(s"http://${observerAddress.get.getAddress.getHostAddress}:${observerAddress.get.getPort}/visualizer/api/node"))
-      .header("Content-Type", "application/json")
-      .PUT(BodyPublishers.ofString(serializedUpdate))
-      .build()
-
-    try {
-      client.send(request, BodyHandlers.ofString()).statusCode() == 200
-    } catch {
-      case e: Exception =>
-        logger.error("Failed to send observer update", e)
-    }
-  }
+  override def sendObserverUpdate(update: NodeInfoUpdate): Unit =
+    observerAddress.foreach(HttpHelper.sendObserverUpdate(client, _, update))
 }
 
 object HttpNetworkAdapter extends NetworkAdapter.Factory {

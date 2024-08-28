@@ -31,7 +31,7 @@ class KademliaRouting[V: JsonValueCodec](
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 
-  private val network = networkFactory.create(InetSocketAddress(localNodeInfo.address.getPort), observerAddress, KademliaEventHandler$)
+  private val network = networkFactory.create(InetSocketAddress(localNodeInfo.address.getPort), observerAddress, KademliaEventHandler)
 
   private val buckets: mutable.Buffer[KBucket] = new mutable.ArrayDeque[KBucket]
 
@@ -70,7 +70,7 @@ class KademliaRouting[V: JsonValueCodec](
       .collect { case (key, _) if distanceLeadingZeros(key) == partitionIndex => key }
       .foreach { key => destination.put(key, source.remove(key).get) }
 
-  private object KademliaEventHandler$ extends EventHandler[V] {
+  private object KademliaEventHandler extends EventHandler[V] {
     override def handlePing(request: PingEvent[V]): Either[RedirectEvent[V], PingAnswerEvent[V]] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       if (request.targetId == localNodeInfo.id) {
@@ -80,10 +80,10 @@ class KademliaRouting[V: JsonValueCodec](
           case Some(value) => request.createAnswer(true)
           case None =>
             getLocalNode(request.targetId) match
-              case Some(nodeInfo) => request.createRedirect(nodeInfo)
+              case Some(nodeInfo) => request.createRedirect(localNodeInfo, nodeInfo)
               case None =>
                 getClosestBetterThan(request.targetId, localNodeInfo.id) match
-                  case closest if closest.nonEmpty => request.createRedirect(closest.head)
+                  case closest if closest.nonEmpty => request.createRedirect(localNodeInfo, closest.head)
                   case _                           => request.createAnswer(false)
       }
     }
@@ -97,7 +97,7 @@ class KademliaRouting[V: JsonValueCodec](
           case Some(_) => request.createAnswer(true)
           case None =>
             getClosestBetterThan(request.targetId, localNodeInfo.id) match
-              case closest if closest.nonEmpty => request.createRedirect(closest.head)
+              case closest if closest.nonEmpty => request.createRedirect(localNodeInfo, closest.head)
               case _                           => request.createAnswer(false)
       }
     }
@@ -111,7 +111,7 @@ class KademliaRouting[V: JsonValueCodec](
         case None =>
           logger.info(s"Search: did not find local index group for key ${request.targetId}, looking for closer nodes")
           getClosestBetterThan(request.targetId, localNodeInfo.id) match
-            case closest if closest.nonEmpty => request.createRedirect(closest.head)
+            case closest if closest.nonEmpty => request.createRedirect(localNodeInfo, closest.head)
             case _                           => request.createAnswer(None)
     }
 
@@ -120,7 +120,7 @@ class KademliaRouting[V: JsonValueCodec](
       val localSuccess = putLocalValue(request.targetId, request.value)
       logger.info(s"Stored value ${request.value.value} at id ${request.targetId} locally: $localSuccess")
       getClosestBetterThan(request.targetId, localNodeInfo.id) match
-        case closest if closest.nonEmpty => request.createRedirect(closest.head)
+        case closest if closest.nonEmpty => request.createRedirect(localNodeInfo, closest.head)
         case _                           => request.createAnswer(localSuccess)
     }
   }
@@ -237,7 +237,7 @@ class KademliaRouting[V: JsonValueCodec](
         answer
       }
       .flatMap {
-        case Left(RedirectEvent(requestId, targetPeer, closerTargetInfo)) =>
+        case Left(RedirectEvent(requestId, _, closerTargetInfo)) =>
           logger.info(s"Redirecting Request($requestId) to closer target: $closerTargetInfo")
           remoteCall(closerTargetInfo.address, originator)
         case Right(value) => Future.successful(value.content)
