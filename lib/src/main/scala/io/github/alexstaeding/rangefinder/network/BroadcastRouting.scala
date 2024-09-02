@@ -12,17 +12,17 @@ import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
 import scala.util.{Failure, Success}
 
-class BroadcastRouting[V: JsonValueCodec: Ordering](
+class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
     private val networkFactory: NetworkAdapter.Factory,
     private val localNodeInfo: NodeInfo,
     private val observerAddress: Option[InetSocketAddress],
     private val contentUrl: Option[String] = None,
     private val localContentKeys: Option[Seq[String]] = None,
 )(using logger: Logger)
-    extends Routing[V] {
+    extends Routing[V, P] {
 
   private val peers: mutable.Map[NodeId, NodeInfo] = new mutable.HashMap
-  private val values: mutable.SortedMap[V, OwnedValue[V]] = new mutable.TreeMap
+  private val values: mutable.SortedMap[V, IndexEntry.Value[V]] = new mutable.TreeMap
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 
@@ -30,13 +30,13 @@ class BroadcastRouting[V: JsonValueCodec: Ordering](
 
   override def ping(targetId: NodeId): Future[Boolean] = ???
 
-  override def store(value: OwnedValue[V]): Future[Boolean] = ???
+  override def store(value: IndexEntry.Value[V]): Future[Boolean] = ???
 
   override def findNode(targetId: NodeId): Future[NodeInfo] = ???
 
-  override def search(key: PartialKey[V]): Future[Seq[OwnedValue[V]]] = ???
+  override def search(key: PartialKey[V]): Future[Seq[IndexEntry.Value[V]]] = ???
 
-  override def putLocal(id: NodeId, value: Either[NodeInfo, OwnedValue[V]]): Boolean = ???
+  override def putLocal(id: NodeId, value: Either[NodeInfo, IndexEntry.Value[V]]): Boolean = ???
 
   private object BroadcastEventHandler extends EventHandler[V] {
 

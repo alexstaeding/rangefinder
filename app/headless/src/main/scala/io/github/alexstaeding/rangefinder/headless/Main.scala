@@ -88,7 +88,7 @@ def headlessMain(): Unit = {
         .view
         .mapValues(_.length)
         .foreach { (word, frequency) =>
-          routing.store(OwnedValue(localNodeId, StringIndex(word), path))
+          routing.store(IndexEntry.Value(localNodeId, StringIndex(word), path))
         },
     )
 

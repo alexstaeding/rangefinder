@@ -18,28 +18,28 @@ trait NetworkAdapter[V] {
 
 object NetworkAdapter {
   trait Factory {
-    def create[V: JsonValueCodec](
+    def create[V: JsonValueCodec, P: JsonValueCodec](
         bindAddress: InetSocketAddress,
         observerAddress: Option[InetSocketAddress],
-        onReceive: EventHandler[V],
+        onReceive: EventHandler[V, P],
     )(using logger: Logger): NetworkAdapter[V]
   }
 }
 
-trait EventHandler[V] {
+trait EventHandler[V, P] {
   def handlePing(request: PingEvent[V]): Either[RedirectEvent[V], PingAnswerEvent[V]]
   def handleFindNode(request: FindNodeEvent[V]): Either[RedirectEvent[V], FindNodeAnswerEvent[V]]
-  def handleSearch(request: SearchEvent[V]): Either[RedirectEvent[V], SearchAnswerEvent[V]]
-  def handleStoreValue(request: StoreValueEvent[V]): Either[RedirectEvent[V], StoreValueAnswerEvent[V]]
+  def handleSearch(request: SearchEvent[V, P]): Either[RedirectEvent[V], SearchAnswerEvent[V, P]]
+  def handleStoreValue(request: StoreValueEvent[V, P]): Either[RedirectEvent[V], StoreValueAnswerEvent[V]]
 }
 
-extension [V](eventHandler: EventHandler[V]) {
+extension [V, P](eventHandler: EventHandler[V, P]) {
   def processRequest(request: RequestEvent[V]): Try[RedirectOr[V, AnswerEvent[V]]] =
     Try {
       request match
         case pingEvent: PingEvent[V]             => eventHandler.handlePing(pingEvent)
         case findNodeEvent: FindNodeEvent[V]     => eventHandler.handleFindNode(findNodeEvent)
-        case findValueEvent: SearchEvent[V]      => eventHandler.handleSearch(findValueEvent)
-        case storeValueEvent: StoreValueEvent[V] => eventHandler.handleStoreValue(storeValueEvent)
+        case findValueEvent: SearchEvent[V, P]      => eventHandler.handleSearch(findValueEvent)
+        case storeValueEvent: StoreValueEvent[V, P] => eventHandler.handleStoreValue(storeValueEvent)
     }
 }

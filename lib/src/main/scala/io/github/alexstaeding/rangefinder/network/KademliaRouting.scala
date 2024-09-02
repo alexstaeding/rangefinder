@@ -1,18 +1,22 @@
 package io.github.alexstaeding.rangefinder.network
 
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
+import io.github.alexstaeding.rangefinder.crdt.SortedGrowOnlyExpiryMultiMap
 import io.github.alexstaeding.rangefinder.meta.{PartialKey, PartialKeyMatcher, PartialKeyUniverse}
+import io.github.alexstaeding.rangefinder.network.IndexEntry.Funnel
 import io.github.alexstaeding.rangefinder.network.NodeId.DistanceOrdering
 import org.apache.logging.log4j.Logger
 
 import java.net.InetSocketAddress
+import java.time.OffsetDateTime
 import java.util
 import java.util.concurrent.Executors
 import scala.annotation.tailrec
+import scala.collection.immutable.{ArraySeq, LinearSeq, SortedMap, TreeMap}
 import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
 
-class KademliaRouting[V: JsonValueCodec](
+class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
     private val networkFactory: NetworkAdapter.Factory,
     private val localNodeInfo: NodeInfo,
     private val observerAddress: Option[InetSocketAddress],
@@ -27,7 +31,7 @@ class KademliaRouting[V: JsonValueCodec](
     partialKeyMatcher: PartialKeyMatcher[V],
     ordering: Ordering[V],
     hashingAlgorithm: HashingAlgorithm[V],
-) extends Routing[V] {
+) extends Routing[V, P] {
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 
@@ -70,7 +74,7 @@ class KademliaRouting[V: JsonValueCodec](
       .collect { case (key, _) if distanceLeadingZeros(key) == partitionIndex => key }
       .foreach { key => destination.put(key, source.remove(key).get) }
 
-  private object KademliaEventHandler extends EventHandler[V] {
+  private object KademliaEventHandler extends EventHandler[V, P] {
     override def handlePing(request: PingEvent[V]): Either[RedirectEvent[V], PingAnswerEvent[V]] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       if (request.targetId == localNodeInfo.id) {
@@ -102,12 +106,52 @@ class KademliaRouting[V: JsonValueCodec](
       }
     }
 
-    override def handleSearch(request: SearchEvent[V]): Either[RedirectEvent[V], SearchAnswerEvent[V]] = {
+    /** Performs a BFS on all provided funnels.
+      */
+    private def funnelSearch(rootSearch: SearchEvent[V, P], funnels: Seq[IndexEntry.Funnel[V]]): Seq[IndexEntry[V, P]] = {
+          
+      case class PathEntry(funnel: IndexEntry.Funnel[V], prev: Option[PathEntry])
+
+      val rootEntry = PathEntry(IndexEntry.Funnel(rootSearch.targetId, rootSearch.search), None)
+      val queue = mutable.ArrayDeque.from(funnels.map { f => PathEntry(f, Some(rootEntry)) })
+      val results = new mutable.ArrayBuffer[IndexEntry[V, P]]
+
+      while (queue.nonEmpty) {
+        val current = queue.removeHead()
+        // check for cycles
+        if (
+          Seq
+            .unfold(current) { c => c.prev.map { p => (p, p) } }
+            .forall { p => p.funnel.targetId == current.funnel.targetId }
+        ) {
+          getLocalValue(current.funnel.targetId) match
+            // funnel to local index
+            case Some(indexGroup) =>
+              indexGroup.search(current.funnel.search).foreach {
+                case f: IndexEntry.Funnel[V]   => queue.addOne(PathEntry(f, Some(current)))
+                case v: IndexEntry.Value[V, P] => results.addOne(v)
+              }
+            // funnel to remote index
+            // additional search is not performed at this time.
+            // instead, aliases are sent in result set to the query initiator
+            case None => results.addOne(current.funnel)
+        }
+      }
+
+      results.toSeq
+    }
+
+    override def handleSearch(request: SearchEvent[V, P]): Either[RedirectEvent[V], SearchAnswerEvent[V, P]] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       getLocalValue(request.targetId) match
         case Some(indexGroup) =>
           logger.info(s"Search: found local index group ${indexGroup.partialKey} for id ${request.targetId}")
-          request.createAnswer(Some(indexGroup.values.to(LazyList).filter { x => request.search.matches(x.value) }.toList))
+
+          val localEntries = indexGroup.search(request.search)
+          val funnelResults = funnelSearch(request, localEntries.collect { case x: IndexEntry.Funnel[V] => x })
+          val localResults = localEntries.collect { case x: IndexEntry.Value[V, P] => x }
+
+          request.createAnswer(Some(localResults ++ funnelResults))
         case None =>
           logger.info(s"Search: did not find local index group for key ${request.targetId}, looking for closer nodes")
           getClosestBetterThan(request.targetId, localNodeInfo.id) match
@@ -115,10 +159,10 @@ class KademliaRouting[V: JsonValueCodec](
             case _                           => request.createAnswer(None)
     }
 
-    override def handleStoreValue(request: StoreValueEvent[V]): Either[RedirectEvent[V], StoreValueAnswerEvent[V]] = {
+    override def handleStoreValue(request: StoreValueEvent[V, P]): Either[RedirectEvent[V], StoreValueAnswerEvent[V]] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       val localSuccess = putLocalValue(request.targetId, request.value)
-      logger.info(s"Stored value ${request.value.value} at id ${request.targetId} locally: $localSuccess")
+      logger.info(s"Stored value ${request.value} at id ${request.targetId} locally: $localSuccess")
       getClosestBetterThan(request.targetId, localNodeInfo.id) match
         case closest if closest.nonEmpty => request.createRedirect(localNodeInfo, closest.head)
         case _                           => request.createAnswer(localSuccess)
@@ -147,14 +191,14 @@ class KademliaRouting[V: JsonValueCodec](
     }
   }
 
-  override def putLocal(id: NodeId, localValue: Either[NodeInfo, OwnedValue[V]]): Boolean = {
+  override def putLocal(id: NodeId, localValue: Either[NodeInfo, IndexEntry.Value[V, P]]): Boolean = {
     val index = distanceLeadingZeros(id)
     ensureBucketSpace(index) match {
       case Some(bucket) =>
         localValue match
           case Right(ownedValue) =>
             bucket.ensureIndexGroup(id, universe.getRootKey(ownedValue.value)) match
-              case Some(indexGroup: IndexGroup) => indexGroup.values.addOne(ownedValue)
+              case Some(indexGroup: IndexGroup) => indexGroup.values
               case None                         => logger.error(s"Full indexGroup $id")
           case Left(nodeInfo) => bucket.nodes.put(id, nodeInfo)
         sendObserverUpdate()
@@ -199,17 +243,27 @@ class KademliaRouting[V: JsonValueCodec](
 
   private def getLocalNode(targetId: NodeId): Option[NodeInfo] = getKBucket(distanceLeadingZeros(targetId)).nodes.get(targetId)
 
-  private def getLocal(targetId: NodeId): Option[NodeInfo | IndexGroup] = getLocalNode(targetId).orElse(getLocalValue(targetId))
+  private case class IndexGroup(partialKey: PartialKey[V]) {
+    private var _values: SortedGrowOnlyExpiryMultiMap[V, IndexEntry.Value[V, P]] = new TreeMap
+    def values: SortedGrowOnlyExpiryMultiMap[V, IndexEntry.Value[V, P]] = _values
 
-  private case class IndexGroup(
-      partialKey: PartialKey[V],
-  ) {
-    val values: mutable.TreeSet[OwnedValue[V]] = new mutable.TreeSet[OwnedValue[V]]()
+    def search(searchKey: PartialKey[V]): Seq[IndexEntry[V, P]] = {
+      val now = OffsetDateTime.now()
+      values
+        .range(searchKey.startInclusive, searchKey.endExclusive)
+        .to(LazyList)
+        .flatMap { (_, m) => m }
+        .filter { (_, expiry) => expiry.isAfter(now) }
+        .map { (entry, _) => entry }
+        .toList
+    }
   }
 
+//  private class
+
   private class KBucket {
-    val nodes: mutable.Map[NodeId, NodeInfo] = new mutable.HashMap[NodeId, NodeInfo]()
-    val values: mutable.Map[NodeId, IndexGroup] = new mutable.HashMap[NodeId, IndexGroup]()
+    val nodes: mutable.Map[NodeId, NodeInfo] = new mutable.HashMap[NodeId, NodeInfo]
+    val values: mutable.Map[NodeId, IndexGroup] = new mutable.HashMap[NodeId, IndexGroup]
 
     def size: Int = nodes.size + values.size
     def isFull: Boolean = size >= kMaxSize
@@ -261,18 +315,18 @@ class KademliaRouting[V: JsonValueCodec](
               .map(_.getOrElse(false))
   }
 
-  override def store(ownedValue: OwnedValue[V]): Future[Boolean] = {
+  override def store(indexEntry: IndexEntry.Value[V, P]): Future[Boolean] = {
     val rootKey =
-      try universe.getRootKey(ownedValue.value)
+      try universe.getRootKey(indexEntry.value)
       catch
         case e: Exception =>
-          logger.error(s"Failed to get root key for value ${ownedValue.value}", e)
+          logger.error(s"Failed to get root key for value ${indexEntry.value}", e)
           return Future.successful(false)
     val targetId = hashingAlgorithm.hash(rootKey)
     logger.info(s"Determined hash for rootKey $rootKey -> ${targetId.toHex}")
     Future
       .find(getClosest(targetId).map { case nextHopPeer @ NodeInfo(_, address) =>
-        remoteCall(address, RequestEvent.createStoreValue(localNodeInfo, targetId, nextHopPeer, ownedValue)).recover { exception =>
+        remoteCall(address, RequestEvent.createStoreValue(localNodeInfo, targetId, nextHopPeer, indexEntry)).recover { exception =>
           logger.error(s"Failed to send remote store to $nextHopPeer", exception)
           false
         }
@@ -282,7 +336,7 @@ class KademliaRouting[V: JsonValueCodec](
 
   override def findNode(targetId: NodeId): Future[NodeInfo] = ???
 
-  override def search(key: PartialKey[V]): Future[Seq[OwnedValue[V]]] = {
+  override def search(key: PartialKey[V]): Future[Seq[IndexEntry.Value[V]]] = {
     val rootKeys =
       try universe.getOverlappingRootKeys(key)
       catch
@@ -294,7 +348,7 @@ class KademliaRouting[V: JsonValueCodec](
     Future.sequence(rootKeys.map(x => search(x, key))).map(_.flatten)
   }
 
-  private def search(rootKey: PartialKey[V], searchKey: PartialKey[V]): Future[Seq[OwnedValue[V]]] = {
+  private def search(rootKey: PartialKey[V], searchKey: PartialKey[V]): Future[Seq[IndexEntry.Value[V]]] = {
     val targetId = hashingAlgorithm.hash(rootKey)
     getLocalValue(targetId) match
       case Some(indexGroup) =>

@@ -27,4 +27,8 @@ object Lattice {
         case None    => Some(r)
       }
     }
+
+  given setLattice[A]: Lattice[Set[A]] with {
+    override def merge(left: Set[A], right: Set[A]): Set[A] = left union right
+  }
 }

@@ -4,6 +4,7 @@ import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import com.github.plokhotnyuk.jsoniter_scala.macros.JsonCodecMaker
 import io.github.alexstaeding.rangefinder.meta.PartialKey
 
+import java.time.OffsetDateTime
 import java.util.UUID
 
 /** Represents a message sent by or received from a [[NetworkAdapter]].
@@ -42,8 +43,8 @@ sealed trait AnswerEvent[V] extends NetworkEvent[V] {
   def content: Content
 }
 
-sealed trait SeqAnswerEvent[V] extends AnswerEvent[V] {
-  override type Content = Option[Seq[OwnedValue[V]]]
+sealed trait SeqAnswerEvent[V, P] extends AnswerEvent[V] {
+  override type Content = Option[Seq[IndexEntry.Value[V, P]]]
 }
 
 sealed trait BooleanAnswerEvent[V] extends AnswerEvent[V] {
@@ -88,17 +89,24 @@ object RequestEvent {
   def createFindNode[V](localNodeInfo: NodeInfo, targetId: NodeId, nextHopPeer: NodeInfo, ttl: Int = 1): FindNodeEvent[V] =
     FindNodeEvent[V](UUID.randomUUID(), localNodeInfo, targetId, RoutingInfo(localNodeInfo, nextHopPeer, ttl))
 
-  def createSearch[V](localNodeInfo: NodeInfo, targetId: NodeId, nextHopPeer: NodeInfo, key: PartialKey[V], ttl: Int = 1): SearchEvent[V] =
-    SearchEvent[V](UUID.randomUUID(), localNodeInfo, targetId, RoutingInfo(localNodeInfo, nextHopPeer, ttl), key)
-
-  def createStoreValue[V](
+  def createSearch[V, P](
       localNodeInfo: NodeInfo,
       targetId: NodeId,
       nextHopPeer: NodeInfo,
-      value: OwnedValue[V],
+      key: PartialKey[V],
       ttl: Int = 1,
-  ): StoreValueEvent[V] =
-    StoreValueEvent[V](UUID.randomUUID(), localNodeInfo, targetId, RoutingInfo(localNodeInfo, nextHopPeer, ttl), value)
+  ): SearchEvent[V, P] =
+    SearchEvent[V, P](UUID.randomUUID(), localNodeInfo, targetId, RoutingInfo(localNodeInfo, nextHopPeer, ttl), key)
+
+  def createStoreValue[V, P](
+      localNodeInfo: NodeInfo,
+      targetId: NodeId,
+      nextHopPeer: NodeInfo,
+      ttl: Int = 1,
+      value: IndexEntry.Value[V, P],
+      expiration: OffsetDateTime,
+  ): StoreValueEvent[V, P] =
+    StoreValueEvent[V, P](UUID.randomUUID(), localNodeInfo, targetId, RoutingInfo(localNodeInfo, nextHopPeer, ttl), value, expiration)
 }
 
 final case class PingEvent[V](
@@ -129,31 +137,32 @@ case class FindNodeEvent[V](
     Right(FindNodeAnswerEvent(requestId, RoutingInfo(routingInfo.nextHopPeer, sourceInfo, 1), content))
 }
 
-case class SearchEvent[V](
+case class SearchEvent[V, P](
     override val requestId: UUID,
     override val sourceInfo: NodeInfo,
     override val targetId: NodeId,
     override val routingInfo: RoutingInfo,
     search: PartialKey[V],
 ) extends RequestEvent[V] {
-  override type This = SearchEvent[V]
-  override type Answer = SearchAnswerEvent[V]
-  override def forward(localNodeInfo: NodeInfo, nextHopPeer: NodeInfo): Option[SearchEvent[V]] =
+  override type This = SearchEvent[V, P]
+  override type Answer = SearchAnswerEvent[V, P]
+  override def forward(localNodeInfo: NodeInfo, nextHopPeer: NodeInfo): Option[SearchEvent[V, P]] =
     if (routingInfo.ttl <= 1) None else Some(copy(routingInfo = RoutingInfo(localNodeInfo, nextHopPeer, routingInfo.ttl - 1)))
-  def createAnswer(content: Option[Seq[OwnedValue[V]]]): Right[RedirectEvent[V], SearchAnswerEvent[V]] =
+  def createAnswer(content: Option[Seq[IndexEntry[V, P]]]): Right[RedirectEvent[V], SearchAnswerEvent[V, P]] =
     Right(SearchAnswerEvent(requestId, RoutingInfo(routingInfo.nextHopPeer, sourceInfo, 1), content))
 }
 
-case class StoreValueEvent[V](
+case class StoreValueEvent[V, P](
     override val requestId: UUID,
     override val sourceInfo: NodeInfo,
     override val targetId: NodeId,
     override val routingInfo: RoutingInfo,
-    value: OwnedValue[V],
+    value: IndexEntry[V, P],
+    expiration: OffsetDateTime,
 ) extends RequestEvent[V] {
-  override type This = StoreValueEvent[V]
+  override type This = StoreValueEvent[V, P]
   override type Answer = StoreValueAnswerEvent[V]
-  override def forward(localNodeInfo: NodeInfo, nextHopPeer: NodeInfo): Option[StoreValueEvent[V]] =
+  override def forward(localNodeInfo: NodeInfo, nextHopPeer: NodeInfo): Option[StoreValueEvent[V, P]] =
     if (routingInfo.ttl <= 1) None else Some(copy(routingInfo = RoutingInfo(localNodeInfo, nextHopPeer, routingInfo.ttl - 1)))
   def createAnswer(content: Boolean): Right[RedirectEvent[V], StoreValueAnswerEvent[V]] =
     Right(StoreValueAnswerEvent(requestId, RoutingInfo(routingInfo.nextHopPeer, sourceInfo, 1), content))
@@ -171,11 +180,11 @@ case class FindNodeAnswerEvent[V](
     override val content: Boolean,
 ) extends BooleanAnswerEvent[V]
 
-case class SearchAnswerEvent[V](
+case class SearchAnswerEvent[V, P](
     override val requestId: UUID,
     override val routingInfo: RoutingInfo,
-    override val content: Option[Seq[OwnedValue[V]]],
-) extends SeqAnswerEvent[V]
+    override val content: Option[Seq[IndexEntry[V, P]]],
+) extends SeqAnswerEvent[V, P]
 
 case class StoreValueAnswerEvent[V](
     override val requestId: UUID,

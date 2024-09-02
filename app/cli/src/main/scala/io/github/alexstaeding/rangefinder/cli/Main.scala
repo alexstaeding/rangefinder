@@ -47,7 +47,7 @@ def cliMain(clientNum: Int): Unit = {
       case s"store($value)" =>
         logger.info(s"Storing value: $value")
         routing
-          .store(OwnedValue(localNodeId, StringIndex(value), "test"))
+          .store(IndexEntry.Value(localNodeId, StringIndex(value), "test"))
           .onComplete {
             case Success(value) =>
               logger.info(s"Stored value: $value")
