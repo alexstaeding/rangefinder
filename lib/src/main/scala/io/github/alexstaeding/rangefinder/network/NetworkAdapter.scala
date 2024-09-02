@@ -7,11 +7,11 @@ import java.net.InetSocketAddress
 import scala.concurrent.Future
 import scala.util.Try
 
-trait NetworkAdapter[V] {
-  def send[A <: AnswerEvent[V], R <: RequestEvent[V] { type Answer <: A }](
+trait NetworkAdapter[V, P] {
+  def send[A <: AnswerEvent[V, P], R <: RequestEvent[V, P] { type Answer <: A }](
       nextHop: InetSocketAddress,
       event: R,
-  ): Future[Either[RedirectEvent[V], A]]
+  ): Future[Either[RedirectEvent, A]]
 
   def sendObserverUpdate(update: NodeInfoUpdate): Unit
 }
@@ -22,23 +22,23 @@ object NetworkAdapter {
         bindAddress: InetSocketAddress,
         observerAddress: Option[InetSocketAddress],
         onReceive: EventHandler[V, P],
-    )(using logger: Logger): NetworkAdapter[V]
+    )(using logger: Logger): NetworkAdapter[V, P]
   }
 }
 
 trait EventHandler[V, P] {
-  def handlePing(request: PingEvent[V]): Either[RedirectEvent[V], PingAnswerEvent[V]]
-  def handleFindNode(request: FindNodeEvent[V]): Either[RedirectEvent[V], FindNodeAnswerEvent[V]]
-  def handleSearch(request: SearchEvent[V, P]): Either[RedirectEvent[V], SearchAnswerEvent[V, P]]
-  def handleStoreValue(request: StoreValueEvent[V, P]): Either[RedirectEvent[V], StoreValueAnswerEvent[V]]
+  def handlePing(request: PingEvent): Either[RedirectEvent, PingAnswerEvent]
+  def handleFindNode(request: FindNodeEvent): Either[RedirectEvent, FindNodeAnswerEvent]
+  def handleSearch(request: SearchEvent[V, P]): Either[RedirectEvent, SearchAnswerEvent[V, P]]
+  def handleStoreValue(request: StoreValueEvent[V, P]): Either[RedirectEvent, StoreValueAnswerEvent]
 }
 
 extension [V, P](eventHandler: EventHandler[V, P]) {
-  def processRequest(request: RequestEvent[V]): Try[RedirectOr[V, AnswerEvent[V]]] =
+  def processRequest(request: RequestEvent[V, P]): Try[RedirectOr[AnswerEvent[V, P]]] =
     Try {
       request match
-        case pingEvent: PingEvent[V]             => eventHandler.handlePing(pingEvent)
-        case findNodeEvent: FindNodeEvent[V]     => eventHandler.handleFindNode(findNodeEvent)
+        case pingEvent: PingEvent                   => eventHandler.handlePing(pingEvent)
+        case findNodeEvent: FindNodeEvent           => eventHandler.handleFindNode(findNodeEvent)
         case findValueEvent: SearchEvent[V, P]      => eventHandler.handleSearch(findValueEvent)
         case storeValueEvent: StoreValueEvent[V, P] => eventHandler.handleStoreValue(storeValueEvent)
     }

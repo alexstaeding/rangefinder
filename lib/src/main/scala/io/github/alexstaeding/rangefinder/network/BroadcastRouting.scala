@@ -22,7 +22,8 @@ class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
     extends Routing[V, P] {
 
   private val peers: mutable.Map[NodeId, NodeInfo] = new mutable.HashMap
-  private val values: mutable.SortedMap[V, IndexEntry.Value[V]] = new mutable.TreeMap
+  private val values: mutable.SortedMap[V, IndexEntry.Value[V, P]] = new mutable.TreeMap
+  private val funnels: mutable.Set[IndexEntry.Funnel[V]] = new mutable.LinkedHashSet
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 
@@ -30,17 +31,17 @@ class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
 
   override def ping(targetId: NodeId): Future[Boolean] = ???
 
-  override def store(value: IndexEntry.Value[V]): Future[Boolean] = ???
+  override def store(value: IndexEntry[V, P]): Future[Boolean] = ???
 
   override def findNode(targetId: NodeId): Future[NodeInfo] = ???
 
-  override def search(key: PartialKey[V]): Future[Seq[IndexEntry.Value[V]]] = ???
+  override def search(key: PartialKey[V]): Future[Seq[IndexEntry.Value[V, P]]] = ???
 
-  override def putLocal(id: NodeId, value: Either[NodeInfo, IndexEntry.Value[V]]): Boolean = ???
+  override def putLocal(id: NodeId, value: Either[NodeInfo, IndexEntry[V, P]]): Boolean = ???
 
-  private object BroadcastEventHandler extends EventHandler[V] {
+  private object BroadcastEventHandler extends EventHandler[V, P] {
 
-    private def broadcast(localNodeInfo: NodeInfo, lastHopPeer: NodeInfo, event: RequestEvent[V]): Unit = {
+    private def broadcast(localNodeInfo: NodeInfo, lastHopPeer: NodeInfo, event: RequestEvent[V, P]): Unit = {
       Await.result(
         Future.sequence(
           peers.values
@@ -59,21 +60,21 @@ class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
       )
     }
 
-    override def handlePing(request: PingEvent[V]): Either[RedirectEvent[V], PingAnswerEvent[V]] = request match
+    override def handlePing(request: PingEvent): Either[RedirectEvent, PingAnswerEvent] = request match
       case PingEvent(_, _, targetId, _) if targetId == localNodeInfo.id => request.createAnswer(true)
       case PingEvent(_, _, targetId, _) if peers.contains(targetId)     => request.createRedirect(localNodeInfo, peers(targetId))
       case event @ PingEvent(_, _, targetId, RoutingInfo(lastHopPeer, _, _)) =>
         broadcast(localNodeInfo, lastHopPeer, event)
         request.createAnswer(false)
 
-    override def handleFindNode(request: FindNodeEvent[V]): Either[RedirectEvent[V], FindNodeAnswerEvent[V]] = request match
+    override def handleFindNode(request: FindNodeEvent): Either[RedirectEvent, FindNodeAnswerEvent] = request match
       case FindNodeEvent(_, _, targetId, _) if targetId == localNodeInfo.id => request.createAnswer(true)
       case FindNodeEvent(_, _, targetId, _) if peers.contains(targetId)     => request.createRedirect(localNodeInfo, peers(targetId))
       case event @ FindNodeEvent(_, _, targetId, RoutingInfo(lastHopPeer, _, _)) =>
         broadcast(localNodeInfo, lastHopPeer, event)
         request.createAnswer(false)
 
-    override def handleSearch(request: SearchEvent[V]): Either[RedirectEvent[V], SearchAnswerEvent[V]] = {
+    override def handleSearch(request: SearchEvent[V, P]): Either[RedirectEvent, SearchAnswerEvent[V, P]] = {
       request.createAnswer(
         Some(
           values
@@ -84,12 +85,14 @@ class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
       )
     }
 
-    override def handleStoreValue(request: StoreValueEvent[V]): Either[RedirectEvent[V], StoreValueAnswerEvent[V]] = request match
-      case StoreValueEvent(_, _, targetId, _, value) if targetId == localNodeInfo.id =>
-        values.put(value.value, value)
+    override def handleStoreValue(request: StoreValueEvent[V, P]): Either[RedirectEvent, StoreValueAnswerEvent] = request match
+      case StoreValueEvent(_, _, targetId, _, value, _) if targetId == localNodeInfo.id =>
+        value match
+          case f: IndexEntry.Funnel[V] => funnels.addOne(f)
+          case v: IndexEntry.Value[V, P] => values.put(v.value, v)
         request.createAnswer(true)
-      case StoreValueEvent(_, _, targetId, _, _) if peers.contains(targetId) => request.createRedirect(localNodeInfo, peers(targetId))
-      case event @ StoreValueEvent(_, _, targetId, RoutingInfo(lastHopPeer, _, _), _) =>
+      case StoreValueEvent(_, _, targetId, _, _, _) if peers.contains(targetId) => request.createRedirect(localNodeInfo, peers(targetId))
+      case event @ StoreValueEvent(_, _, _, RoutingInfo(lastHopPeer, _, _), _, _) =>
         broadcast(localNodeInfo, lastHopPeer, event)
         request.createAnswer(false)
   }

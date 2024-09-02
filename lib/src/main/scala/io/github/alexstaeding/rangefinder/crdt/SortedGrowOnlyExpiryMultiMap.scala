@@ -35,11 +35,7 @@ object SortedGrowOnlyExpiryMultiMap {
           .from(left.cleaned(now))
           .merged(HashMap.from(right.cleaned(now))) { case ((key, leftItems), (_, rightItems)) =>
             // conflict resolution function for multiple index items with the same key
-            key -> HashMap
-              .from(leftItems)
-              .merged(HashMap.from(rightItems)) { case ((e, leftExpiry), (_, rightExpiry)) =>
-                e -> (leftExpiry max rightExpiry)
-              }
+            key -> GrowOnlyExpiryMap.lattice.merge(leftItems, rightItems)
           },
       )
     }

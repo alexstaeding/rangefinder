@@ -7,9 +7,9 @@ import io.github.alexstaeding.rangefinder.meta.PartialKey
 sealed trait IndexEntry[+V, +P]
 
 object IndexEntry {
-  final case class Funnel[V](targetId: NodeId, search: PartialKey[V]) extends IndexEntry[V, Nothing]
+  final case class Funnel[+V](targetId: NodeId, search: PartialKey[V]) extends IndexEntry[V, Nothing]
     
-  final case class Value[V, P](owner: NodeId, value: V, path: P) extends IndexEntry[V, P]
+  final case class Value[+V, +P](owner: NodeId, value: V, path: P) extends IndexEntry[V, P]
 
   object Value {
     given codec[V: JsonValueCodec, P: JsonValueCodec]: JsonValueCodec[Value[V, P]] = JsonCodecMaker.make

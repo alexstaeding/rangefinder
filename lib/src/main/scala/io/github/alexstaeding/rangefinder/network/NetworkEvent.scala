@@ -9,7 +9,7 @@ import java.util.UUID
 
 /** Represents a message sent by or received from a [[NetworkAdapter]].
   */
-sealed trait NetworkEvent[V] {
+sealed trait NetworkEvent[+V, +P] {
 
   /** Persistent ID for all messages in this communication
     */
@@ -36,25 +36,25 @@ object RoutingInfo {
   def direct(lastHopPeer: NodeInfo, nextHopPeer: NodeInfo): RoutingInfo = RoutingInfo(lastHopPeer, nextHopPeer, 1)
 }
 
-type RedirectOr[V, A <: AnswerEvent[V]] = Either[RedirectEvent[V], A]
+type RedirectOr[A <: AnswerEvent[?, ?]] = Either[RedirectEvent, A]
 
-sealed trait AnswerEvent[V] extends NetworkEvent[V] {
+sealed trait AnswerEvent[+V, +P] extends NetworkEvent[V, P] {
   type Content
   def content: Content
 }
 
-sealed trait SeqAnswerEvent[V, P] extends AnswerEvent[V] {
-  override type Content = Option[Seq[IndexEntry.Value[V, P]]]
+sealed trait SeqAnswerEvent[V, P] extends AnswerEvent[V, P] {
+  override type Content = Option[Seq[IndexEntry[V, P]]]
 }
 
-sealed trait BooleanAnswerEvent[V] extends AnswerEvent[V] {
+sealed trait BooleanAnswerEvent[V] extends AnswerEvent[V, Nothing] {
   override type Content = Boolean
 }
 
-sealed trait RequestEvent[V] extends NetworkEvent[V] {
+sealed trait RequestEvent[+V, +P] extends NetworkEvent[V, P] {
 
-  type This <: RequestEvent[V]
-  type Answer <: AnswerEvent[V]
+  type This <: RequestEvent[V, P]
+  type Answer <: AnswerEvent[V, P]
 
   /** The ID of the node that sent this message
     */
@@ -66,28 +66,28 @@ sealed trait RequestEvent[V] extends NetworkEvent[V] {
 
   def forward(localNodeInfo: NodeInfo, nextHopPeer: NodeInfo): Option[This]
 
-  def createRedirect(localNodeInfo: NodeInfo, closerTargetInfo: NodeInfo): Left[RedirectEvent[V], Answer] =
+  def createRedirect(localNodeInfo: NodeInfo, closerTargetInfo: NodeInfo): Left[RedirectEvent, Answer] =
     Left(RedirectEvent(requestId, RoutingInfo.direct(localNodeInfo, sourceInfo), closerTargetInfo))
 
-  def createError(message: String): ErrorEvent[V] = ErrorEvent(requestId, routingInfo, message)
+  def createError(message: String): ErrorEvent = ErrorEvent(requestId, routingInfo, message)
 }
 
 object NetworkEvent {
-  given codec[V: JsonValueCodec]: JsonValueCodec[NetworkEvent[V]] = JsonCodecMaker.make
+  given codec[V: JsonValueCodec, P: JsonValueCodec]: JsonValueCodec[NetworkEvent[V, P]] = JsonCodecMaker.make
 }
 
 object AnswerEvent {
-  given codec[V: JsonValueCodec]: JsonValueCodec[AnswerEvent[V]] = JsonCodecMaker.make
+  given codec[V: JsonValueCodec, P: JsonValueCodec]: JsonValueCodec[AnswerEvent[V, P]] = JsonCodecMaker.make
 }
 
 object RequestEvent {
-  given codec[V: JsonValueCodec]: JsonValueCodec[RequestEvent[V]] = JsonCodecMaker.make
+  given codec[V: JsonValueCodec, P: JsonValueCodec]: JsonValueCodec[RequestEvent[V, P]] = JsonCodecMaker.make
 
-  def createPing[V](localNodeInfo: NodeInfo, targetId: NodeId, nextHopPeer: NodeInfo, ttl: Int = 1): PingEvent[V] =
-    PingEvent[V](UUID.randomUUID(), localNodeInfo, targetId, RoutingInfo(localNodeInfo, nextHopPeer, ttl))
+  def createPing(localNodeInfo: NodeInfo, targetId: NodeId, nextHopPeer: NodeInfo, ttl: Int = 1): PingEvent =
+    PingEvent(UUID.randomUUID(), localNodeInfo, targetId, RoutingInfo(localNodeInfo, nextHopPeer, ttl))
 
-  def createFindNode[V](localNodeInfo: NodeInfo, targetId: NodeId, nextHopPeer: NodeInfo, ttl: Int = 1): FindNodeEvent[V] =
-    FindNodeEvent[V](UUID.randomUUID(), localNodeInfo, targetId, RoutingInfo(localNodeInfo, nextHopPeer, ttl))
+  def createFindNode(localNodeInfo: NodeInfo, targetId: NodeId, nextHopPeer: NodeInfo, ttl: Int = 1): FindNodeEvent =
+    FindNodeEvent(UUID.randomUUID(), localNodeInfo, targetId, RoutingInfo(localNodeInfo, nextHopPeer, ttl))
 
   def createSearch[V, P](
       localNodeInfo: NodeInfo,
@@ -102,38 +102,38 @@ object RequestEvent {
       localNodeInfo: NodeInfo,
       targetId: NodeId,
       nextHopPeer: NodeInfo,
-      ttl: Int = 1,
       value: IndexEntry.Value[V, P],
-      expiration: OffsetDateTime,
+      expiration: OffsetDateTime = OffsetDateTime.now().plusHours(1),
+      ttl: Int = 1,
   ): StoreValueEvent[V, P] =
     StoreValueEvent[V, P](UUID.randomUUID(), localNodeInfo, targetId, RoutingInfo(localNodeInfo, nextHopPeer, ttl), value, expiration)
 }
 
-final case class PingEvent[V](
+final case class PingEvent(
     override val requestId: UUID,
     override val sourceInfo: NodeInfo,
     override val targetId: NodeId,
     override val routingInfo: RoutingInfo,
-) extends RequestEvent[V] {
-  override type This = PingEvent[V]
-  override type Answer = PingAnswerEvent[V]
-  override def forward(localNodeInfo: NodeInfo, nextHopPeer: NodeInfo): Option[PingEvent[V]] =
+) extends RequestEvent[Nothing, Nothing] {
+  override type This = PingEvent
+  override type Answer = PingAnswerEvent
+  override def forward(localNodeInfo: NodeInfo, nextHopPeer: NodeInfo): Option[PingEvent] =
     if (routingInfo.ttl <= 1) None else Some(copy(routingInfo = RoutingInfo(localNodeInfo, nextHopPeer, routingInfo.ttl - 1)))
-  def createAnswer(content: Boolean): Right[RedirectEvent[V], PingAnswerEvent[V]] =
+  def createAnswer(content: Boolean): Right[RedirectEvent, PingAnswerEvent] =
     Right(PingAnswerEvent(requestId, RoutingInfo(routingInfo.nextHopPeer, sourceInfo, 1), content))
 }
 
-case class FindNodeEvent[V](
+case class FindNodeEvent(
     override val requestId: UUID,
     override val sourceInfo: NodeInfo,
     override val targetId: NodeId,
     override val routingInfo: RoutingInfo,
-) extends RequestEvent[V] {
-  override type This = FindNodeEvent[V]
-  override type Answer = FindNodeAnswerEvent[V]
-  override def forward(localNodeInfo: NodeInfo, nextHopPeer: NodeInfo): Option[FindNodeEvent[V]] =
+) extends RequestEvent[Nothing, Nothing] {
+  override type This = FindNodeEvent
+  override type Answer = FindNodeAnswerEvent
+  override def forward(localNodeInfo: NodeInfo, nextHopPeer: NodeInfo): Option[FindNodeEvent] =
     if (routingInfo.ttl <= 1) None else Some(copy(routingInfo = RoutingInfo(localNodeInfo, nextHopPeer, routingInfo.ttl - 1)))
-  def createAnswer(content: Boolean): Right[RedirectEvent[V], FindNodeAnswerEvent[V]] =
+  def createAnswer(content: Boolean): Right[RedirectEvent, FindNodeAnswerEvent] =
     Right(FindNodeAnswerEvent(requestId, RoutingInfo(routingInfo.nextHopPeer, sourceInfo, 1), content))
 }
 
@@ -143,12 +143,12 @@ case class SearchEvent[V, P](
     override val targetId: NodeId,
     override val routingInfo: RoutingInfo,
     search: PartialKey[V],
-) extends RequestEvent[V] {
+) extends RequestEvent[V, P] {
   override type This = SearchEvent[V, P]
   override type Answer = SearchAnswerEvent[V, P]
   override def forward(localNodeInfo: NodeInfo, nextHopPeer: NodeInfo): Option[SearchEvent[V, P]] =
     if (routingInfo.ttl <= 1) None else Some(copy(routingInfo = RoutingInfo(localNodeInfo, nextHopPeer, routingInfo.ttl - 1)))
-  def createAnswer(content: Option[Seq[IndexEntry[V, P]]]): Right[RedirectEvent[V], SearchAnswerEvent[V, P]] =
+  def createAnswer(content: Option[Seq[IndexEntry[V, P]]]): Right[RedirectEvent, SearchAnswerEvent[V, P]] =
     Right(SearchAnswerEvent(requestId, RoutingInfo(routingInfo.nextHopPeer, sourceInfo, 1), content))
 }
 
@@ -159,26 +159,26 @@ case class StoreValueEvent[V, P](
     override val routingInfo: RoutingInfo,
     value: IndexEntry[V, P],
     expiration: OffsetDateTime,
-) extends RequestEvent[V] {
+) extends RequestEvent[V, P] {
   override type This = StoreValueEvent[V, P]
-  override type Answer = StoreValueAnswerEvent[V]
+  override type Answer = StoreValueAnswerEvent
   override def forward(localNodeInfo: NodeInfo, nextHopPeer: NodeInfo): Option[StoreValueEvent[V, P]] =
     if (routingInfo.ttl <= 1) None else Some(copy(routingInfo = RoutingInfo(localNodeInfo, nextHopPeer, routingInfo.ttl - 1)))
-  def createAnswer(content: Boolean): Right[RedirectEvent[V], StoreValueAnswerEvent[V]] =
+  def createAnswer(content: Boolean): Right[RedirectEvent, StoreValueAnswerEvent] =
     Right(StoreValueAnswerEvent(requestId, RoutingInfo(routingInfo.nextHopPeer, sourceInfo, 1), content))
 }
 
-case class PingAnswerEvent[V](
+case class PingAnswerEvent(
     override val requestId: UUID,
     override val routingInfo: RoutingInfo,
     override val content: Boolean,
-) extends BooleanAnswerEvent[V]
+) extends BooleanAnswerEvent[Nothing]
 
-case class FindNodeAnswerEvent[V](
+case class FindNodeAnswerEvent(
     override val requestId: UUID,
     override val routingInfo: RoutingInfo,
     override val content: Boolean,
-) extends BooleanAnswerEvent[V]
+) extends BooleanAnswerEvent[Nothing]
 
 case class SearchAnswerEvent[V, P](
     override val requestId: UUID,
@@ -186,34 +186,34 @@ case class SearchAnswerEvent[V, P](
     override val content: Option[Seq[IndexEntry[V, P]]],
 ) extends SeqAnswerEvent[V, P]
 
-case class StoreValueAnswerEvent[V](
+case class StoreValueAnswerEvent(
     override val requestId: UUID,
     override val routingInfo: RoutingInfo,
     override val content: Boolean,
-) extends BooleanAnswerEvent[V]
+) extends BooleanAnswerEvent[Nothing]
 
-case class RedirectEvent[V](
+case class RedirectEvent(
     override val requestId: UUID,
     override val routingInfo: RoutingInfo,
     closerTargetInfo: NodeInfo,
-) extends AnswerEvent[V] {
+) extends AnswerEvent[Nothing, Nothing] {
   override type Content = Nothing
   override def content: Nothing = throw new NoSuchElementException
 }
 
-case class ErrorEvent[V](
+case class ErrorEvent(
     override val requestId: UUID,
     override val routingInfo: RoutingInfo,
     message: String,
-) extends AnswerEvent[V] {
+) extends AnswerEvent[Nothing, Nothing] {
   override type Content = String
   override val content: String = message
 }
 
-extension [V, A <: AnswerEvent[V]](answer: A) {
-  def extractRedirect(): RedirectOr[V, A] = {
+extension [A <: AnswerEvent[Nothing, Nothing]](answer: A) {
+  def extractRedirect(): RedirectOr[A] = {
     answer match
-      case redirect: RedirectEvent[V] => Left(redirect)
+      case redirect: RedirectEvent => Left(redirect)
       case answer =>
         answer match
           case ErrorEvent(_, _, message) => throw new RuntimeException(message)
