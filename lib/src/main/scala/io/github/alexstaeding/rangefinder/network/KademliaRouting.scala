@@ -1,7 +1,7 @@
 package io.github.alexstaeding.rangefinder.network
 
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
-import io.github.alexstaeding.rangefinder.crdt.SortedGrowOnlyExpiryMultiMap
+import io.github.alexstaeding.rangefinder.crdt.{GrowOnlyExpiryMap, SortedGrowOnlyExpiryMultiMap}
 import io.github.alexstaeding.rangefinder.meta.{PartialKey, PartialKeyMatcher, PartialKeyUniverse}
 import io.github.alexstaeding.rangefinder.network.IndexEntry.Funnel
 import io.github.alexstaeding.rangefinder.network.NodeId.DistanceOrdering
@@ -12,7 +12,7 @@ import java.time.OffsetDateTime
 import java.util
 import java.util.concurrent.Executors
 import scala.annotation.tailrec
-import scala.collection.immutable.{ArraySeq, LinearSeq, SortedMap, TreeMap}
+import scala.collection.immutable.{ListMap, TreeMap}
 import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
 
@@ -124,7 +124,7 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
         request.createAnswer(true)
       } else {
         getLocalValue(request.targetId) match
-          case Some(value) => request.createAnswer(true)
+          case Some(_) => request.createAnswer(true)
           case None =>
             getLocalNode(request.targetId) match
               case Some(nodeInfo) => request.createRedirect(localNodeInfo, nodeInfo)
@@ -203,8 +203,8 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
             entry.getRootKeysOption.foreach { rootKeys =>
               rootKeys.foreach { rootKey =>
                 bucket.ensureIndexGroup(id, rootKey) match
-                  case Some(indexGroup: IndexGroup) => indexGroup.values
-                  case None => logger.error(s"Full indexGroup $id")
+                  case Some(indexGroup: IndexGroup) => indexGroup.put(entry)
+                  case None                         => logger.error(s"Full indexGroup $id")
               }
             }
           case Left(nodeInfo) => bucket.nodes.put(id, nodeInfo)
@@ -252,7 +252,10 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
 
   private case class IndexGroup(partialKey: PartialKey[V]) {
     private var _values: SortedGrowOnlyExpiryMultiMap[V, IndexEntry.Value[V, P]] = new TreeMap
+    private var _funnels: GrowOnlyExpiryMap[IndexEntry.Funnel[V]] = new ListMap
+
     def values: SortedGrowOnlyExpiryMultiMap[V, IndexEntry.Value[V, P]] = _values
+    def funnels: GrowOnlyExpiryMap[IndexEntry.Funnel[V]] = _funnels
 
     def search(searchKey: PartialKey[V]): Seq[IndexEntry[V, P]] = {
       val now = OffsetDateTime.now()
@@ -264,9 +267,22 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
         .map { (entry, _) => entry }
         .toList
     }
-  }
 
-//  private class
+    private def putValue(value: IndexEntry.Value[V, P]): Unit = {
+      val one = SortedGrowOnlyExpiryMultiMap.ofOne(value.value, value)
+      _values = SortedGrowOnlyExpiryMultiMap.lattice.merge(_values, one)
+    }
+
+    private def putFunnel(funnel: IndexEntry.Funnel[V]): Unit = {
+      val one = GrowOnlyExpiryMap.ofOne(funnel)
+      _funnels = GrowOnlyExpiryMap.lattice.merge(_funnels, one)
+    }
+
+    def put(entry: IndexEntry[V, P]): Unit =
+      entry match
+        case f: IndexEntry.Funnel[V]   => putFunnel(f)
+        case v: IndexEntry.Value[V, P] => putValue(v)
+  }
 
   private class KBucket {
     val nodes: mutable.Map[NodeId, NodeInfo] = new mutable.HashMap[NodeId, NodeInfo]
