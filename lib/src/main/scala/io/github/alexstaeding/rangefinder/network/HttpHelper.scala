@@ -34,10 +34,10 @@ object HttpHelper {
     }
   }
 
-  def receiveRequest[V: JsonValueCodec](
+  def receiveRequest[V: JsonValueCodec, P: JsonValueCodec](
       exchange: HttpExchange,
-      eventHandler: EventHandler[V],
-      request: RequestEvent[V],
+      eventHandler: EventHandler[V, P],
+      request: RequestEvent[V, P],
   )(using logger: Logger): Unit = {
     val response: String = eventHandler
       .processRequest(request)
@@ -59,10 +59,13 @@ object HttpHelper {
     exchange.close()
   }
 
-  private def serializeAnswer[V: JsonValueCodec](answer: RedirectOr[V, AnswerEvent[V]])(using logger: Logger): String = {
+  private def serializeAnswer[V: JsonValueCodec, P: JsonValueCodec](answer: RedirectOr[AnswerEvent[V, P]])(using logger: Logger): String = {
     logger.info(s"Serializing answer $answer")
     answer match
-      case Left(redirect) => writeToString(redirect)(using AnswerEvent.codec)
-      case Right(answer)  => writeToString(answer)(using AnswerEvent.codec)
+      case Left(redirect) =>
+        // Ambiguous given instances for V and P codec
+        writeToString(redirect)(using AnswerEvent.codec(using summon[JsonValueCodec[V]], summon[JsonValueCodec[P]]))
+      case Right(answer) =>
+        writeToString(answer)(using AnswerEvent.codec)
   }
 }

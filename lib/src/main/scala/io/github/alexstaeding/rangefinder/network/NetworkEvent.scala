@@ -102,7 +102,7 @@ object RequestEvent {
       localNodeInfo: NodeInfo,
       targetId: NodeId,
       nextHopPeer: NodeInfo,
-      value: IndexEntry.Value[V, P],
+      value: IndexEntry[V, P],
       expiration: OffsetDateTime = OffsetDateTime.now().plusHours(1),
       ttl: Int = 1,
   ): StoreValueEvent[V, P] =
@@ -210,7 +210,7 @@ case class ErrorEvent(
   override val content: String = message
 }
 
-extension [A <: AnswerEvent[Nothing, Nothing]](answer: A) {
+extension [A <: AnswerEvent[?, ?]](answer: A) {
   def extractRedirect(): RedirectOr[A] = {
     answer match
       case redirect: RedirectEvent => Left(redirect)

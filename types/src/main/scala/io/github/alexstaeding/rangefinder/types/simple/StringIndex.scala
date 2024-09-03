@@ -58,7 +58,7 @@ object StringIndex {
     "script" -> "A list of commands that are executed by a certain program or scripting engine.",
     "syntax" -> "The set of rules that defines the combinations of symbols that are considered to be correctly structured statements or expressions in a language.",
     "thread" -> "The smallest sequence of programmed instructions that can be managed independently by a scheduler.",
-    "variable" -> "A storage location paired with an associated symbolic name, which contains some known or unknown quantity or information, a value.",
+    "variable" -> "A storage location paired with an associated symbolic name, which contains some known or unknown quantity or information, a entry.",
     "widget" -> "A graphical control element, such as a button or scroll bar, used in GUIs.",
     "xml" -> "Extensible Markup Language, a markup language that defines a set of rules for encoding documents in a format that is both human-readable and machine-readable.",
   )

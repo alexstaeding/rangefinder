@@ -31,7 +31,7 @@ class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
 
   override def ping(targetId: NodeId): Future[Boolean] = ???
 
-  override def store(value: IndexEntry[V, P]): Future[Boolean] = ???
+  override def store(entry: IndexEntry[V, P]): Future[Boolean] = ???
 
   override def findNode(targetId: NodeId): Future[NodeInfo] = ???
 
@@ -50,8 +50,10 @@ class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
             .flatMap { peer =>
               event.forward(localNodeInfo, lastHopPeer).map { forwardEvent =>
                 network.send(peer.address, forwardEvent).transform {
-                  case Failure(exception) => Success(logger.warn("Failed to forward ping {} to {}", forwardEvent, peer))
-                  case Success(value)     => Success(logger.info("Successfully forwarded ping {} to {}", forwardEvent, peer))
+                  case Failure(exception) =>
+                    Success(logger.warn("Failed to forward ping {} to {} with exception {}", forwardEvent, peer, exception))
+                  case Success(_) =>
+                    Success(logger.info("Successfully forwarded ping {} to {}", forwardEvent, peer))
                 }
               }
             },
@@ -63,14 +65,14 @@ class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
     override def handlePing(request: PingEvent): Either[RedirectEvent, PingAnswerEvent] = request match
       case PingEvent(_, _, targetId, _) if targetId == localNodeInfo.id => request.createAnswer(true)
       case PingEvent(_, _, targetId, _) if peers.contains(targetId)     => request.createRedirect(localNodeInfo, peers(targetId))
-      case event @ PingEvent(_, _, targetId, RoutingInfo(lastHopPeer, _, _)) =>
+      case event @ PingEvent(_, _, _, RoutingInfo(lastHopPeer, _, _)) =>
         broadcast(localNodeInfo, lastHopPeer, event)
         request.createAnswer(false)
 
     override def handleFindNode(request: FindNodeEvent): Either[RedirectEvent, FindNodeAnswerEvent] = request match
       case FindNodeEvent(_, _, targetId, _) if targetId == localNodeInfo.id => request.createAnswer(true)
       case FindNodeEvent(_, _, targetId, _) if peers.contains(targetId)     => request.createRedirect(localNodeInfo, peers(targetId))
-      case event @ FindNodeEvent(_, _, targetId, RoutingInfo(lastHopPeer, _, _)) =>
+      case event @ FindNodeEvent(_, _, _, RoutingInfo(lastHopPeer, _, _)) =>
         broadcast(localNodeInfo, lastHopPeer, event)
         request.createAnswer(false)
 
@@ -88,7 +90,7 @@ class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
     override def handleStoreValue(request: StoreValueEvent[V, P]): Either[RedirectEvent, StoreValueAnswerEvent] = request match
       case StoreValueEvent(_, _, targetId, _, value, _) if targetId == localNodeInfo.id =>
         value match
-          case f: IndexEntry.Funnel[V] => funnels.addOne(f)
+          case f: IndexEntry.Funnel[V]   => funnels.addOne(f)
           case v: IndexEntry.Value[V, P] => values.put(v.value, v)
         request.createAnswer(true)
       case StoreValueEvent(_, _, targetId, _, _, _) if peers.contains(targetId) => request.createRedirect(localNodeInfo, peers(targetId))

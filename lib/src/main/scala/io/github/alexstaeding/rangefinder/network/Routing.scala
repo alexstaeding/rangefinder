@@ -8,7 +8,7 @@ trait Routing[V, P] {
 
   def ping(targetId: NodeId): Future[Boolean]
 
-  def store(value: IndexEntry[V, P]): Future[Boolean]
+  def store(entry: IndexEntry[V, P]): Future[Boolean]
 
   def findNode(targetId: NodeId): Future[NodeInfo]
 
@@ -16,7 +16,7 @@ trait Routing[V, P] {
 
   def putLocalNode(id: NodeId, nodeInfo: NodeInfo): Boolean = putLocal(id, Left(nodeInfo))
 
-  def putLocalValue(id: NodeId, value: IndexEntry[V, P]): Boolean = putLocal(id, Right(value))
+  def putLocalValue(id: NodeId, entry: IndexEntry[V, P]): Boolean = putLocal(id, Right(entry))
 
   def putLocal(id: NodeId, value: Either[NodeInfo, IndexEntry[V, P]]): Boolean
 }

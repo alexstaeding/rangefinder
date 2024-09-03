@@ -1,7 +1,7 @@
 package io.github.alexstaeding.rangefinder.headless
 
 import io.github.alexstaeding.rangefinder.network.*
-import io.github.alexstaeding.rangefinder.types.simple.StringIndex
+import io.github.alexstaeding.rangefinder.types.simple.{StringIndex, StringPayload}
 import org.apache.logging.log4j.{LogManager, Logger}
 
 import java.net.InetSocketAddress
@@ -63,7 +63,7 @@ def headlessMain(): Unit = {
   val content = StringIndex.getContent(localNodeId)
   logger.info(s"Local content keys: ${content.keys.mkString(", ")}")
   val contentBrowser = new ContentBrowser(contentAddress, content)
-  val routing = new KademliaRouting[StringIndex](
+  val routing = new KademliaRouting[StringIndex, StringPayload](
     HttpNetworkAdapter,
     localNodeInfo,
     observerAddress,
@@ -88,7 +88,7 @@ def headlessMain(): Unit = {
         .view
         .mapValues(_.length)
         .foreach { (word, frequency) =>
-          routing.store(IndexEntry.Value(localNodeId, StringIndex(word), path))
+          routing.store(IndexEntry.Value(localNodeId, StringIndex(word), StringPayload(path)))
         },
     )
 

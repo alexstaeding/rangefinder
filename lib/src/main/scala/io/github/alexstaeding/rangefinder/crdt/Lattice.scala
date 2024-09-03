@@ -17,7 +17,7 @@ object Lattice {
 
   given mapLattice[K, V: Lattice]: Lattice[Map[K, V]] = (left: Map[K, V], right: Map[K, V]) =>
     val (small, large) =
-      // compare unsigned treats the “unknown” value -1 as larger than any known size
+      // compare unsigned treats the “unknown” entry -1 as larger than any known size
       if 0 <= Integer.compareUnsigned(left.knownSize, right.knownSize)
       then (right, left)
       else (left, right)

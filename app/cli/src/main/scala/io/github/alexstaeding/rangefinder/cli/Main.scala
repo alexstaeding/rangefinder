@@ -45,14 +45,14 @@ def cliMain(clientNum: Int): Unit = {
           case None =>
             logger.info(s"Invalid node id: '$id'")
       case s"store($value)" =>
-        logger.info(s"Storing value: $value")
+        logger.info(s"Storing entry: $value")
         routing
           .store(IndexEntry.Value(localNodeId, StringIndex(value), "test"))
           .onComplete {
             case Success(value) =>
-              logger.info(s"Stored value: $value")
+              logger.info(s"Stored entry: $value")
             case Failure(exception) =>
-              logger.error(s"Failed to store value", exception)
+              logger.error(s"Failed to store entry", exception)
           }(using ExecutionContext.parasitic)
       case s"search($search)" =>
         logger.info(s"Search for $search")
@@ -60,9 +60,9 @@ def cliMain(clientNum: Int): Unit = {
           .search(PartialKey.ofOne(StringIndex(search)))
           .onComplete {
             case Success(value) =>
-              logger.info(s"Found value: $value")
+              logger.info(s"Found entry: $value")
             case Failure(exception) =>
-              logger.error(s"Failed to find value", exception)
+              logger.error(s"Failed to find entry", exception)
           }(using ExecutionContext.parasitic)
       case s"putLocalNode($id,$host,$port)" =>
         NodeId.fromHex(id) match

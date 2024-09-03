@@ -19,13 +19,13 @@ import scala.io.Source
 import scala.jdk.FutureConverters.CompletionStageOps
 import scala.util.Try
 
-class AsyncHttpNetworkAdapter[V: JsonValueCodec](
+class AsyncHttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
     private val bindAddress: InetSocketAddress,
     private val observerAddress: Option[InetSocketAddress],
-    private val eventHandler: EventHandler[V],
-    private val pipelines: BroadcastPipelines[V],
+    private val eventHandler: EventHandler[V, P],
+    private val pipelines: BroadcastPipelines[V, P],
 )(using logger: Logger)
-    extends NetworkAdapter[V] {
+    extends NetworkAdapter[V, P] {
 
   private val client = HttpClient.newHttpClient()
   private val server = HttpServer.create(bindAddress, 10)
@@ -33,7 +33,7 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec](
 
   private val answerCache: mutable.Map[UUID, AnswerFuture[?]] = new mutable.HashMap
 
-  private def receiveAnswer[A <: AnswerEvent[V]](answer: A): Unit = {
+  private def receiveAnswer[A <: AnswerEvent[V, P]](answer: A): Unit = {
     answerCache.get(answer.requestId) match
       case Some(future) => future.asInstanceOf[AnswerFuture[A]].receive(answer.extractRedirect())
       case None         => logger.error(s"Received answer for unknown request ${answer.requestId}")
@@ -49,7 +49,9 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec](
   server.createContext(
     "/api/v1/async-answer",
     (exchange: HttpExchange) => {
-      val answer = readFromStream(exchange.getRequestBody)(using AnswerEvent.codec)
+      // Ambiguous given instances for V and P codec
+      val answer =
+        readFromStream(exchange.getRequestBody)(using AnswerEvent.codec(using summon[JsonValueCodec[V]], summon[JsonValueCodec[P]]))
       logger.info(s"Received answer $answer to endpoint /api/v1/async-answer")
       receiveAnswer(answer)
       exchange.sendResponseHeaders(200, 0)
@@ -57,10 +59,10 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec](
     },
   )
 
-  override def send[A <: AnswerEvent[V], R <: RequestEvent[V] { type Answer <: A }](
+  override def send[A <: AnswerEvent[V, P], R <: RequestEvent[V, P] { type Answer <: A }](
       nextHop: InetSocketAddress,
       event: R,
-  ): Future[Either[RedirectEvent[V], A]] = {
+  ): Future[Either[RedirectEvent, A]] = {
     logger.info(s"Sending message $event to $nextHop")
     val body = writeToString(event)(using RequestEvent.codec)
 
@@ -81,12 +83,12 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec](
     }
   }
 
-  private class AnswerFuture[A <: AnswerEvent[V]](pipelineHandler: BroadcastPipelineHandler[V, A]) {
+  private class AnswerFuture[A <: AnswerEvent[V, P]](pipelineHandler: BroadcastPipelineHandler[A]) {
 
-    private val promise = Promise[RedirectOr[V, A]]()
+    private val promise = Promise[RedirectOr[A]]()
     private val writeLock = ReentrantLock()
-    private var state = Option.empty[TerminateOrContinue[V, A]]
-    def receive(answer: RedirectOr[V, A]): Unit = {
+    private var state = Option.empty[TerminateOrContinue[A]]
+    def receive(answer: RedirectOr[A]): Unit = {
       writeLock.lock()
       try {
         state match
@@ -101,37 +103,37 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec](
       }
     }
 
-    def await(): Future[RedirectOr[V, A]] = promise.future
+    def await(): Future[RedirectOr[A]] = promise.future
   }
 
   override def sendObserverUpdate(update: NodeInfoUpdate): Unit =
     observerAddress.foreach(HttpHelper.sendObserverUpdate(client, _, update))
 }
 
-sealed trait TerminateOrContinue[V, A <: AnswerEvent[V]] extends Product
-case class Terminate[V, A <: AnswerEvent[V]](answer: RedirectOr[V, A]) extends TerminateOrContinue[V, A]
-case class Continue[V, A <: AnswerEvent[V]](answer: RedirectOr[V, A]) extends TerminateOrContinue[V, A]
+sealed trait TerminateOrContinue[A <: AnswerEvent[?, ?]] extends Product
+case class Terminate[A <: AnswerEvent[?, ?]](answer: RedirectOr[A]) extends TerminateOrContinue[A]
+case class Continue[A <: AnswerEvent[?, ?]](answer: RedirectOr[A]) extends TerminateOrContinue[A]
 
-trait BroadcastPipelineHandler[V, A <: AnswerEvent[V]] {
+trait BroadcastPipelineHandler[A <: AnswerEvent[?, ?]] {
   val timeoutMillis: Int
-  def handleInit(answer: RedirectOr[V, A]): TerminateOrContinue[V, A]
-  def handle(existing: RedirectOr[V, A], next: RedirectOr[V, A]): TerminateOrContinue[V, A]
+  def handleInit(answer: RedirectOr[A]): TerminateOrContinue[A]
+  def handle(existing: RedirectOr[A], next: RedirectOr[A]): TerminateOrContinue[A]
 }
 
-trait BroadcastPipelines[V] {
-  val ping: BroadcastPipelineHandler[V, PingAnswerEvent[V]]
-  val findNode: BroadcastPipelineHandler[V, FindNodeAnswerEvent[V]]
-  val search: BroadcastPipelineHandler[V, SearchAnswerEvent[V]]
-  val storeValue: BroadcastPipelineHandler[V, StoreValueAnswerEvent[V]]
+trait BroadcastPipelines[V, P] {
+  val ping: BroadcastPipelineHandler[PingAnswerEvent]
+  val findNode: BroadcastPipelineHandler[FindNodeAnswerEvent]
+  val search: BroadcastPipelineHandler[SearchAnswerEvent[V, P]]
+  val storeValue: BroadcastPipelineHandler[StoreValueAnswerEvent]
 }
 
-extension [V](pipelines: BroadcastPipelines[V]) {
-  def getPipeline[A <: AnswerEvent[V], R <: RequestEvent[V] { type Answer <: A }](event: R): BroadcastPipelineHandler[V, A] =
+extension [V, P](pipelines: BroadcastPipelines[V, P]) {
+  def getPipeline[A <: AnswerEvent[V, P], R <: RequestEvent[V, P] { type Answer <: A }](event: R): BroadcastPipelineHandler[A] =
     event match
-      case _: PingEvent[V]       => pipelines.ping.asInstanceOf[BroadcastPipelineHandler[V, A]]
-      case _: FindNodeEvent[V]   => pipelines.findNode.asInstanceOf[BroadcastPipelineHandler[V, A]]
-      case _: SearchEvent[V]     => pipelines.search.asInstanceOf[BroadcastPipelineHandler[V, A]]
-      case _: StoreValueEvent[V] => pipelines.storeValue.asInstanceOf[BroadcastPipelineHandler[V, A]]
+      case _: PingEvent             => pipelines.ping.asInstanceOf[BroadcastPipelineHandler[A]]
+      case _: FindNodeEvent         => pipelines.findNode.asInstanceOf[BroadcastPipelineHandler[A]]
+      case _: SearchEvent[V, P]     => pipelines.search.asInstanceOf[BroadcastPipelineHandler[A]]
+      case _: StoreValueEvent[V, P] => pipelines.storeValue.asInstanceOf[BroadcastPipelineHandler[A]]
 }
 
 object BroadcastPipelineHandler {}
