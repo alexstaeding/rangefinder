@@ -2,7 +2,7 @@ package io.github.alexstaeding.rangefinder.cli
 
 import io.github.alexstaeding.rangefinder.meta.*
 import io.github.alexstaeding.rangefinder.network.*
-import io.github.alexstaeding.rangefinder.types.simple.StringIndex
+import io.github.alexstaeding.rangefinder.types.simple.{StringIndex, StringPayload}
 import org.apache.logging.log4j.{LogManager, Logger}
 
 import java.net.InetSocketAddress
@@ -26,7 +26,7 @@ def cliMain(clientNum: Int): Unit = {
   logger.info(s"localInfo: ${localNodeId.toHex},${bindAddress.getHostString},${bindAddress.getPort}")
   logger.info("Type ping(id) to send a ping to a node")
   // start server threads
-  val routing = new KademliaRouting[StringIndex](HttpNetworkAdapter, localNodeInfo, observerAddress)
+  val routing = new KademliaRouting[StringIndex, StringPayload](HttpNetworkAdapter, localNodeInfo, observerAddress)
   while (true) {
     val line = StdIn.readLine()
     line match {
@@ -47,7 +47,7 @@ def cliMain(clientNum: Int): Unit = {
       case s"store($value)" =>
         logger.info(s"Storing entry: $value")
         routing
-          .store(IndexEntry.Value(localNodeId, StringIndex(value), "test"))
+          .store(IndexEntry.Value(localNodeId, StringIndex(value), StringPayload("test")))
           .onComplete {
             case Success(value) =>
               logger.info(s"Stored entry: $value")
@@ -57,7 +57,7 @@ def cliMain(clientNum: Int): Unit = {
       case s"search($search)" =>
         logger.info(s"Search for $search")
         routing
-          .search(PartialKey.ofOne(StringIndex(search)))
+          .search(PartialKey.ofString(search).map(StringIndex(_)))
           .onComplete {
             case Success(value) =>
               logger.info(s"Found entry: $value")

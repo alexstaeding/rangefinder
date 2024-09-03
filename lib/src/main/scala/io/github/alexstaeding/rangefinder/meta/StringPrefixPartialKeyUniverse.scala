@@ -15,7 +15,7 @@ object StringPrefixPartialKeyUniverse extends PartialKeyUniverse[String] {
     } else {
       val start = key.startInclusive.charAt(0)
       val end = key.endExclusive.charAt(0)
-      (start to end).map(_.toString).map(PartialKey.ofOne)
+      (start to end).map(_.toString).map(PartialKey.ofString)
     }
   }
 }

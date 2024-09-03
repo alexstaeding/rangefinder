@@ -7,5 +7,5 @@ case class PartialKey[+V](startInclusive: V, endExclusive: V) {
 }
 
 object PartialKey {
-  def ofOne[V](value: V): PartialKey[V] = PartialKey(value, value)
+  def ofString(value: String): PartialKey[String] = PartialKey(value, value + '\uFFFF')
 }

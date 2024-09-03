@@ -257,8 +257,7 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
     def values: SortedGrowOnlyExpiryMultiMap[V, IndexEntry.Value[V, P]] = _values
     def funnels: GrowOnlyExpiryMap[IndexEntry.Funnel[V]] = _funnels
 
-    def search(searchKey: PartialKey[V]): Seq[IndexEntry[V, P]] = {
-      val now = OffsetDateTime.now()
+    private def searchValues(searchKey: PartialKey[V], now: OffsetDateTime): Seq[IndexEntry[V, P]] = {
       values
         .range(searchKey.startInclusive, searchKey.endExclusive)
         .to(LazyList)
@@ -266,6 +265,20 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
         .filter { (_, expiry) => expiry.isAfter(now) }
         .map { (entry, _) => entry }
         .toList
+    }
+
+    private def searchFunnels(searchKey: PartialKey[V], now: OffsetDateTime): Seq[IndexEntry[V, P]] = {
+      funnels
+        .to(LazyList)
+        .filter { (_, expiry) => expiry.isAfter(now) }
+        .map { (funnel, _) => funnel }
+        .filter { funnel => funnel.search.contains(searchKey) }
+        .toList
+    }
+
+    def search(searchKey: PartialKey[V]): Seq[IndexEntry[V, P]] = {
+      val now = OffsetDateTime.now()
+      searchValues(searchKey, now) ++ searchFunnels(searchKey, now)
     }
 
     private def putValue(value: IndexEntry.Value[V, P]): Unit = {

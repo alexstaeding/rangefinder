@@ -1,7 +1,6 @@
 package io.github.alexstaeding.rangefinder.crdt
 
 import java.time.OffsetDateTime
-import scala.collection.SortedMap
 import scala.math.Ordering.Implicits.*
 
 type GrowOnlyExpiryMap[E] = Map[E, OffsetDateTime]

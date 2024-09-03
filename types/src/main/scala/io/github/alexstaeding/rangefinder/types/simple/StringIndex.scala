@@ -23,11 +23,10 @@ object StringIndex {
       StringPrefixPartialKeyUniverse.getRootKey(value.data).map(StringIndex.apply)
     override def getOverlappingRootKeys(key: PartialKey[StringIndex]): Seq[PartialKey[StringIndex]] =
       StringPrefixPartialKeyUniverse.getOverlappingRootKeys(key.map(_.data)).map(_.map(StringIndex.apply))
-
-  given matcher: PartialKeyMatcher[StringIndex] with
-    extension (partialKey: PartialKey[StringIndex])
-      override def matches(search: StringIndex): Boolean = StringPrefixPartialKeyMatcher.matches(partialKey.map(_.data))(search.data)
+      
   given ordering: Ordering[StringIndex] = Ordering.by(_.data)
+
+  given matcher: PartialKeyMatcher[StringIndex] = new OrderingPartialKeyMatcher[StringIndex]
 
   private val allContent = Map(
     "algorithm" -> "A process or set of rules to be followed in calculations or problem-solving operations.",
