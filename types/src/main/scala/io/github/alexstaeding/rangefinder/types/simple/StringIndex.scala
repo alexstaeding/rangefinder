@@ -18,12 +18,8 @@ object StringIndex {
       .digest(value.startInclusive.data.getBytes("UTF-8") ++ value.endExclusive.data.getBytes("UTF-8"))
     NodeId(hash.take(idSpace.size))
   }
-  given universe: PartialKeyUniverse[StringIndex] with
-    override def getRootKey(value: StringIndex): PartialKey[StringIndex] =
-      StringPrefixPartialKeyUniverse.getRootKey(value.data).map(StringIndex.apply)
-    override def getOverlappingRootKeys(key: PartialKey[StringIndex]): Seq[PartialKey[StringIndex]] =
-      StringPrefixPartialKeyUniverse.getOverlappingRootKeys(key.map(_.data)).map(_.map(StringIndex.apply))
-      
+  given universe: PartialKeyUniverse[StringIndex] = StringPrefixPartialKeyUniverse.map(StringIndex(_), _.data)
+
   given ordering: Ordering[StringIndex] = Ordering.by(_.data)
 
   given matcher: PartialKeyMatcher[StringIndex] = new OrderingPartialKeyMatcher[StringIndex]

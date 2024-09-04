@@ -20,40 +20,32 @@ object StringPrefixPartialKeyUniverse extends PartialKeyUniverse[String] {
   }
 
   override def splitOnce(key: PartialKey[String]): Seq[PartialKey[String]] = {
-
     // exclusive key always ends with '\uFFFF'
     val startLen = key.startInclusive.length
     val endLen = key.endExclusive.length - 1
-    val delta = Math.abs(startLen - endLen)
+    if (startLen - endLen != 0) {
+      throw new IllegalArgumentException(s"$key is not symmetric")
+    }
 
-    val sharedPrefix = key.startInclusive.zip(key.endExclusive)
-      .takeWhile { (a, b) => a == b }
-      .map { (a, _) => a }
-      .mkString
-
-    if (delta == 0) {
-      // simple case
-      val bottomRow = if (sharedPrefix.length < startLen) {
-        // bottom row is at index after shared prefix
-        sharedPrefix.length
-      } else {
-        // strings are equal, last index is bottom row
-        startLen - 1
+    if (key.startInclusive == key.endExclusive.substring(0, endLen)) {
+      ('a' to 'z').map { c =>
+        PartialKey.ofString(key.startInclusive + c)
       }
+    } else {
+      val sharedPrefix = key.startInclusive
+        .zip(key.endExclusive)
+        .takeWhile { (a, b) => a == b }
+        .map { (a, _) => a }
+        .mkString
 
-      (key.startInclusive.charAt(bottomRow) to key.endExclusive.charAt(bottomRow))
+      // for each different suffix char
+      (key.startInclusive.charAt(sharedPrefix.length) to key.endExclusive.charAt(sharedPrefix.length))
         .flatMap { bottom =>
-          ('a' to 'z')
-            .map { c =>
-              // TODO: What if sharedPrefix contains bottom
-              PartialKey.ofString(sharedPrefix + bottom + c)
-            }
+          ('a' to 'z').map { c =>
+            PartialKey.ofString(sharedPrefix + bottom + c)
+          }
         }
-
-
-
-    } else {}
-    ???
+    }
   }
 
   override def split(key: PartialKey[String]): Seq[PartialKey[String]] = ???
