@@ -1,12 +1,15 @@
 package io.github.alexstaeding.rangefinder.meta
 
 object StringPrefixPartialKeyUniverse extends PartialKeyUniverse[String] {
+
+  private val depth = 2
+
   override def getRootKey(value: String): PartialKey[String] = {
     if (value.isBlank) {
       throw IllegalArgumentException("Cannot create a partial key for a blank string")
     }
-    val firstChar = value.charAt(0).toString
-    PartialKey(firstChar, firstChar)
+    val prefix = value.substring(0, depth)
+    PartialKey(prefix, prefix)
   }
 
   override def getOverlappingRootKeys(key: PartialKey[String]): Seq[PartialKey[String]] = {
@@ -18,35 +21,4 @@ object StringPrefixPartialKeyUniverse extends PartialKeyUniverse[String] {
       (start to end).map(_.toString).map(PartialKey.ofString)
     }
   }
-
-  override def splitOnce(key: PartialKey[String]): Seq[PartialKey[String]] = {
-    // exclusive key always ends with '\uFFFF'
-    val startLen = key.startInclusive.length
-    val endLen = key.endExclusive.length - 1
-    if (startLen - endLen != 0) {
-      throw new IllegalArgumentException(s"$key is not symmetric")
-    }
-
-    if (key.startInclusive == key.endExclusive.substring(0, endLen)) {
-      ('a' to 'z').map { c =>
-        PartialKey.ofString(key.startInclusive + c)
-      }
-    } else {
-      val sharedPrefix = key.startInclusive
-        .zip(key.endExclusive)
-        .takeWhile { (a, b) => a == b }
-        .map { (a, _) => a }
-        .mkString
-
-      // for each different suffix char
-      (key.startInclusive.charAt(sharedPrefix.length) to key.endExclusive.charAt(sharedPrefix.length))
-        .flatMap { bottom =>
-          ('a' to 'z').map { c =>
-            PartialKey.ofString(sharedPrefix + bottom + c)
-          }
-        }
-    }
-  }
-
-  override def split(key: PartialKey[String]): Seq[PartialKey[String]] = ???
 }
