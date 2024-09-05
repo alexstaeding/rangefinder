@@ -7,5 +7,8 @@ case class PartialKey[+V](startInclusive: V, endExclusive: V) {
 }
 
 object PartialKey {
-  def ofString(value: String): PartialKey[String] = PartialKey(value, value + '\uFFFF')
+  def ofString(value: String): PartialKey[String] = {
+    val lowercase = value.toLowerCase
+    PartialKey(lowercase, lowercase + '\uFFFF')
+  }
 }

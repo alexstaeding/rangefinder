@@ -6,19 +6,25 @@ object StringPrefixPartialKeyUniverse extends PartialKeyUniverse[String] {
 
   override def getRootKey(value: String): PartialKey[String] = {
     if (value.length < depth) {
-      throw IllegalArgumentException(
-        s"Cannot create a partial key from $value for depth $depth")
+      throw IllegalArgumentException(s"Cannot create a partial key from $value for depth $depth")
     }
-    PartialKey.ofString(value.toLowerCase.substring(0, depth))
+    PartialKey.ofString(value.substring(0, depth))
   }
 
   override def getOverlappingRootKeys(key: PartialKey[String]): Seq[PartialKey[String]] = {
-    if (key.startInclusive == key.endExclusive) {
+    if (key.startInclusive == key.endExclusive.dropRight(1)) {
       Seq(getRootKey(key.startInclusive))
     } else {
-      val start = key.startInclusive.charAt(0)
-      val end = key.endExclusive.charAt(0)
-      (start to end).map(_.toString).map(PartialKey.ofString)
+      val sharedPrefix = key.startInclusive
+        .zip(key.endExclusive)
+        .takeWhile { (a, b) => a == b }
+        .map { (a, _) => a }
+        .mkString
+
+      (key.startInclusive.charAt(sharedPrefix.length) to key.endExclusive.charAt(sharedPrefix.length))
+        .map { bottom =>
+          PartialKey.ofString(sharedPrefix + bottom)
+        }
     }
   }
 }
