@@ -12,9 +12,9 @@ object IndexEntry {
 
   final case class Value[+V, +P](owner: NodeId, value: V, path: P) extends IndexEntry[V, P]
 
-  object Value {
-    given codec[V: JsonValueCodec, P: JsonValueCodec]: JsonValueCodec[Value[V, P]] = JsonCodecMaker.make
+  given codec[V: JsonValueCodec, P: JsonValueCodec]: JsonValueCodec[IndexEntry[V, P]] = JsonCodecMaker.make
 
+  object Value {
     given ordering[V: Ordering, P]: Ordering[IndexEntry.Value[V, P]] =
       (x: IndexEntry.Value[V, P], y: IndexEntry.Value[V, P]) => summon[Ordering[V]].compare(x.value, y.value)
   }
