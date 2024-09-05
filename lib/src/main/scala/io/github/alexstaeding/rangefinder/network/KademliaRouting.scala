@@ -317,6 +317,10 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
     logger.info(s"Sending RPC to $nextHopAddress with target ${originator.targetId}")
     network
       .send(nextHopAddress, originator)
+      .recoverWith { e =>
+        logger.error(s"Failed to send remote call to $nextHopAddress", e)
+        Future.failed(e)
+      }
       .map { answer =>
         logger.info(s"Received answer $answer for ${originator.targetId}")
         val answerId = answer match

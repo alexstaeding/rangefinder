@@ -6,10 +6,11 @@ import org.apache.logging.log4j.Logger
 
 import java.net.InetSocketAddress
 import java.net.http.HttpResponse.BodyHandlers
-import java.net.http.{HttpClient, HttpRequest, HttpResponse}
+import java.net.http.{HttpClient, HttpResponse}
 import java.util.concurrent.Executors
 import scala.concurrent.*
 import scala.jdk.FutureConverters.CompletionStageOps
+import scala.util.{Failure, Try}
 
 class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
     private val bindAddress: InetSocketAddress,
@@ -25,7 +26,17 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
   server.createContext(
     "/api/v1/message",
     (exchange: HttpExchange) => {
-      HttpHelper.receiveRequest(exchange, eventHandler, readFromStream(exchange.getRequestBody)(using RequestEvent.codec))
+      // Ambiguous given instances for V and P codec
+      Try(readFromStream(exchange.getRequestBody)(using RequestEvent.codec(using summon[JsonValueCodec[V]], summon[JsonValueCodec[P]])))
+        .recoverWith { e =>
+          logger.error(s"Failed to parse request", e)
+          exchange.sendResponseHeaders(400, 0)
+          exchange.close()
+          Failure(e)
+        }
+        .map { request =>
+          HttpHelper.receiveRequest(exchange, eventHandler, request)
+        }
     },
   )
   server.setExecutor(ec)
@@ -42,15 +53,19 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
 
     client
       .sendAsync(request, BodyHandlers.ofString())
-      .thenApply { response =>
+      .asScala
+      .recoverWith { e =>
+        logger.error(s"Failed to receive response from $nextHop", e)
+        Future.failed(e)
+      }
+      .map { response =>
         logger.info("Received response: " + response)
         // Ambiguous given instances for V and P codec
         readFromString(response.body())(using AnswerEvent.codec(using summon[JsonValueCodec[V]], summon[JsonValueCodec[P]]))
       }
-      .thenApply { x =>
+      .map { x =>
         x.asInstanceOf[A].extractRedirect()
       }
-      .asScala
   }
 
   override def sendObserverUpdate(update: NodeInfoUpdate): Unit =

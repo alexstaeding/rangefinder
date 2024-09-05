@@ -42,7 +42,7 @@ object HttpHelper {
     val response: String = eventHandler
       .processRequest(request)
       .recover { case e: Exception =>
-        logger.error("Failed to process request", e)
+        logger.error(s"Failed to process request $request", e)
         Right(request.createError(s"Internal server error: ${e.getClass} ${e.getMessage}"))
       }
       .map(serializeAnswer)
