@@ -5,11 +5,11 @@ object StringPrefixPartialKeyUniverse extends PartialKeyUniverse[String] {
   private val depth = 2
 
   override def getRootKey(value: String): PartialKey[String] = {
-    if (value.isBlank) {
-      throw IllegalArgumentException("Cannot create a partial key for a blank string")
+    if (value.length < depth) {
+      throw IllegalArgumentException(
+        s"Cannot create a partial key from $value for depth $depth")
     }
-    val prefix = value.substring(0, depth)
-    PartialKey(prefix, prefix)
+    PartialKey.ofString(value.substring(0, depth))
   }
 
   override def getOverlappingRootKeys(key: PartialKey[String]): Seq[PartialKey[String]] = {
