@@ -200,7 +200,7 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
       case Some(bucket) =>
         localValue match
           case Right(entry) =>
-            entry.getRootKeysOption.foreach { rootKeys =>
+            entry.getIndexKeysOption.foreach { rootKeys =>
               rootKeys.foreach { rootKey =>
                 bucket.ensureIndexGroup(id, rootKey) match
                   case Some(indexGroup: IndexGroup) => indexGroup.put(entry)
@@ -369,7 +369,7 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
   }
 
   override def store(entry: IndexEntry[V, P]): Future[Boolean] = {
-    val rootKeys = entry.getRootKeysOption match
+    val rootKeys = entry.getIndexKeysOption match
       case Some(value) => value
       case None        => return Future.successful(false)
     Future
@@ -388,7 +388,7 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
 
   override def search(key: PartialKey[V]): Future[Seq[IndexEntry[V, P]]] = {
     val rootKeys =
-      try universe.getOverlappingRootKeys(key)
+      try universe.getIndexKeys(key)
       catch
         case e: Exception =>
           logger.error(s"Failed to get root keys for key $key", e)

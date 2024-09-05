@@ -21,17 +21,16 @@ object IndexEntry {
 }
 
 extension [V](entry: IndexEntry[V, ?]) {
-  def getRootKeys(using universe: PartialKeyUniverse[V]): Seq[PartialKey[V]] =
+  def getIndexKeys(using universe: PartialKeyUniverse[V]): Seq[PartialKey[V]] =
     entry match
-      case IndexEntry.Funnel(_, search)  => universe.getOverlappingRootKeys(search)
-      case IndexEntry.Value(_, value, _) => Seq(universe.getRootKey(value))
+      case IndexEntry.Funnel(_, search)  => universe.getIndexKeys(search)
+      case IndexEntry.Value(_, value, _) => universe.getIndexKeys(value)
 
-  def getRootKeysOption(using universe: PartialKeyUniverse[V], logger: Logger): Option[Seq[PartialKey[V]]] =
-    try Some(getRootKeys)
+  def getIndexKeysOption(using universe: PartialKeyUniverse[V], logger: Logger): Option[Seq[PartialKey[V]]] =
+    try Some(getIndexKeys)
     catch {
       case e: Exception =>
         logger.error(s"Failed to get root keys for entry $entry", e)
         None
     }
-
 }

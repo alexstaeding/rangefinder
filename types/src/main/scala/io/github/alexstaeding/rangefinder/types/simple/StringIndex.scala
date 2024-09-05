@@ -18,7 +18,7 @@ object StringIndex {
       .digest(value.startInclusive.data.getBytes("UTF-8") ++ value.endExclusive.data.getBytes("UTF-8"))
     NodeId(hash.take(idSpace.size))
   }
-  given universe: PartialKeyUniverse[StringIndex] = StringPrefixPartialKeyUniverse.map(StringIndex(_), _.data)
+  given universe: PartialKeyUniverse[StringIndex] = StringPrefixPartialKeyUniverse().map(StringIndex(_), _.data)
 
   given ordering: Ordering[StringIndex] = Ordering.by(_.data)
 
