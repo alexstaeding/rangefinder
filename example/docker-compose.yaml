@@ -56,11 +56,19 @@ services:
       OBSERVER_ADDRESS: "visualizer:80"
     ports:
       - "8083:8080"
-  cli:
+  cli-0:
     build:
       context: ../
       dockerfile: cli.Dockerfile
     environment:
+      HOST: "cli-0"
+      OBSERVER_ADDRESS: "visualizer:80"
+  cli-1:
+    build:
+      context: ../
+      dockerfile: cli.Dockerfile
+    environment:
+      HOST: "cli-1"
       OBSERVER_ADDRESS: "visualizer:80"
   visualizer:
     build:
