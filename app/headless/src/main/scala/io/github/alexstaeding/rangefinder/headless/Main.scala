@@ -1,5 +1,6 @@
 package io.github.alexstaeding.rangefinder.headless
 
+import io.github.alexstaeding.rangefinder.meta.StringPrefixPartialKeyUniverse
 import io.github.alexstaeding.rangefinder.network.*
 import io.github.alexstaeding.rangefinder.types.simple.{StringIndex, StringPayload}
 import org.apache.logging.log4j.{LogManager, Logger}
@@ -88,10 +89,12 @@ def headlessMain(): Unit = {
         .view
         .mapValues(_.length)
         .foreach { (word, frequency) =>
-          routing.store(IndexEntry.Value(localNodeId, StringIndex(word), StringPayload(path)))
+          if (word.length >= StringPrefixPartialKeyUniverse.depth) {
+            routing.store(IndexEntry.Value(localNodeId, StringIndex(word), StringPayload(path)))
+          }
         },
     )
 
-    Thread.sleep(20000)
+    Thread.sleep(60000)
   }
 }

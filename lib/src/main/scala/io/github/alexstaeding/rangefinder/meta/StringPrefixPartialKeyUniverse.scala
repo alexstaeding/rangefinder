@@ -2,14 +2,14 @@ package io.github.alexstaeding.rangefinder.meta
 
 object StringPrefixPartialKeyUniverse extends PartialKeyUniverse[String] {
 
-  private val depth = 2
+  val depth: Int = 2
 
   override def getRootKey(value: String): PartialKey[String] = {
     if (value.length < depth) {
       throw IllegalArgumentException(
         s"Cannot create a partial key from $value for depth $depth")
     }
-    PartialKey.ofString(value.substring(0, depth))
+    PartialKey.ofString(value.toLowerCase.substring(0, depth))
   }
 
   override def getOverlappingRootKeys(key: PartialKey[String]): Seq[PartialKey[String]] = {
