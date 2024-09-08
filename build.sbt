@@ -24,6 +24,8 @@ lazy val lib = (project in file("lib"))
       "org.apache.logging.log4j" % "log4j-slf4j2-impl" % "2.23.1",
       "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core" % "2.30.9",
       "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % "2.30.9",
+      "org.scalatest" %% "scalatest" % "3.2.19" % Test,
+      "org.scalatestplus" %% "scalacheck-1-18" % "3.2.19.0" % Test,
     ),
   )
 

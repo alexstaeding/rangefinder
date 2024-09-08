@@ -386,13 +386,13 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
 
   override def findNode(targetId: NodeId): Future[NodeInfo] = ???
 
-  override def search(key: PartialKey[V]): Future[Seq[IndexEntry[V, P]]] = {
+  override def search(key: PartialKey[V]): Future[Set[IndexEntry[V, P]]] = {
     val rootKeys =
       try universe.getIndexKeys(key)
       catch
         case e: Exception =>
           logger.error(s"Failed to get root keys for key $key", e)
-          return Future.successful(Seq.empty)
+          return Future.successful(Set.empty)
     logger.info(s"Search query $key matches root keys $rootKeys")
     // wait for all futures to complete and return full result
     Future.sequence(rootKeys.map(x => search(x, key))).map(_.flatten)

@@ -10,7 +10,7 @@ sealed trait IndexEntry[+V, +P]
 object IndexEntry {
   final case class Funnel[+V](targetId: NodeId, search: PartialKey[V]) extends IndexEntry[V, Nothing]
 
-  final case class Value[+V, +P](owner: NodeId, value: V, path: P) extends IndexEntry[V, P]
+  final case class Value[+V, +P](owner: NodeId, value: V, payload: P) extends IndexEntry[V, P]
 
   given codec[V: JsonValueCodec, P: JsonValueCodec]: JsonValueCodec[IndexEntry[V, P]] = JsonCodecMaker.make
 
@@ -21,12 +21,12 @@ object IndexEntry {
 }
 
 extension [V](entry: IndexEntry[V, ?]) {
-  def getIndexKeys(using universe: PartialKeyUniverse[V]): Seq[PartialKey[V]] =
+  def getIndexKeys(using universe: PartialKeyUniverse[V]): Set[PartialKey[V]] =
     entry match
       case IndexEntry.Funnel(_, search)  => universe.getIndexKeys(search)
       case IndexEntry.Value(_, value, _) => universe.getIndexKeys(value)
 
-  def getIndexKeysOption(using universe: PartialKeyUniverse[V], logger: Logger): Option[Seq[PartialKey[V]]] =
+  def getIndexKeysOption(using universe: PartialKeyUniverse[V], logger: Logger): Option[Set[PartialKey[V]]] =
     try Some(getIndexKeys)
     catch {
       case e: Exception =>
