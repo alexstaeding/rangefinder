@@ -4,10 +4,11 @@ import io.github.alexstaeding.rangefinder.crdt.{GrowOnlyExpiryMap, SortedGrowOnl
 import io.github.alexstaeding.rangefinder.network.{IndexEntry, NodeId}
 
 import java.time.OffsetDateTime
+import java.util.concurrent.locks.ReentrantLock
 import scala.collection.immutable.{AbstractSeq, LinearSeq, ListMap, TreeMap}
 import scala.collection.mutable
-
 class LocalIndex[V: Ordering: PartialKeyMatcher, P] {
+  private val lock = ReentrantLock()
   private var values: Map[NodeId, SortedGrowOnlyExpiryMultiMap[V, IndexEntry.Value[V, P]]] = new ListMap
   private var funnels: Map[NodeId, GrowOnlyExpiryMap[IndexEntry.Funnel[V]]] = new ListMap
 
@@ -81,12 +82,22 @@ class LocalIndex[V: Ordering: PartialKeyMatcher, P] {
 
   private def putValue(targetId: NodeId, value: IndexEntry.Value[V, P]): Unit = {
     val one = SortedGrowOnlyExpiryMultiMap.ofOne(value.value, value)
-    values = values + (targetId -> SortedGrowOnlyExpiryMultiMap.lattice.merge(values.getOrElse(targetId, new TreeMap), one))
+    lock.lock()
+    values = values + (targetId -> SortedGrowOnlyExpiryMultiMap.lattice.merge(
+      SortedGrowOnlyExpiryMultiMap.cleaned(values.getOrElse(targetId, new TreeMap)),
+      one,
+    ))
+    lock.unlock()
   }
 
   private def putFunnel(targetId: NodeId, funnel: IndexEntry.Funnel[V]): Unit = {
     val one = GrowOnlyExpiryMap.ofOne(funnel)
-    funnels = funnels + (funnel.targetId -> GrowOnlyExpiryMap.lattice.merge(funnels.getOrElse(funnel.targetId, new ListMap), one))
+    lock.lock()
+    funnels = funnels + (targetId -> GrowOnlyExpiryMap.lattice.merge(
+      GrowOnlyExpiryMap.cleaned(funnels.getOrElse(funnel.targetId, new ListMap)),
+      one,
+    ))
+    lock.unlock()
   }
 
   def put(targetId: NodeId, entry: IndexEntry[V, P]): Unit =
@@ -94,6 +105,7 @@ class LocalIndex[V: Ordering: PartialKeyMatcher, P] {
       case f: IndexEntry.Funnel[V]   => putFunnel(targetId, f)
       case v: IndexEntry.Value[V, P] => putValue(targetId, v)
 
-  def ping(id: NodeId): Boolean =
-    values.get(id).exists(_.nonEmpty) || funnels.get(id).exists(_.nonEmpty)
+  def getIds: Seq[NodeId] =
+    values.to(LazyList).filter(_._2.nonEmpty).map(_._1) ++ funnels.to(LazyList).filter(_._2.nonEmpty).map(_._1)
+
 }

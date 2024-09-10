@@ -11,7 +11,7 @@ import org.apache.logging.log4j.Logger
 import java.net.InetSocketAddress
 import java.time.OffsetDateTime
 import java.util
-import java.util.concurrent.Executors
+import java.util.concurrent.{ConcurrentLinkedQueue, Executors, LinkedBlockingDeque, PriorityBlockingQueue}
 import scala.annotation.tailrec
 import scala.collection.immutable.{ListMap, TreeMap}
 import scala.collection.mutable
@@ -78,58 +78,31 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
   private object KademliaEventHandler extends EventHandler[V, P] {
     override def handlePing(request: PingEvent): Either[ErrorEvent, PingAnswerEvent] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
-      if (request.targetId == localNodeInfo.id) {
-        request.createAnswer(true)
-      } else {
-        if (localIndex.ping(request.targetId)) {
-          request.createAnswer(true)
-        } else {
-          getLocalNode(request.targetId) match
-            case Some(nodeInfo) => request.createRedirect(localNodeInfo, nodeInfo)
-            case None =>
-              getClosestBetterThan(request.targetId, localNodeInfo.id) match
-                case closest if closest.nonEmpty => request.createRedirect(localNodeInfo, closest.head)
-                case _                           => request.createAnswer(false)
-        }
-      }
+      request.createAnswer(request.targetId == localNodeInfo.id)
     }
 
     override def handleFindNode(request: FindNodeEvent): Either[ErrorEvent, FindNodeAnswerEvent] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       if (request.targetId == localNodeInfo.id) {
-        request.createAnswer(true)
+        request.createAnswer(Seq.empty)
       } else {
         getLocalNode(request.targetId) match
-          case Some(_) => request.createAnswer(true)
-          case None =>
-            getClosestBetterThan(request.targetId, localNodeInfo.id) match
-              case closest if closest.nonEmpty => request.createRedirect(localNodeInfo, closest.head)
-              case _                           => request.createAnswer(false)
+          case Some(localNode) => request.createAnswer(Seq(localNode))
+          case None            => request.createAnswer(getClosestBetterThan(request.targetId, localNodeInfo.id))
       }
     }
 
     override def handleSearch(request: SearchEvent[V, P]): Either[ErrorEvent, SearchAnswerEvent[V, P]] = {
       val now = OffsetDateTime.now
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
-      localIndex.search(request.targetId, request.searchKey, now)
-      getLocalValue(request.targetId) match
-        case Some(indexGroup) =>
-          logger.info(s"Search: found local index group ${indexGroup.partialKey} for id ${request.targetId}")
-          request.createAnswer(Some(searchIndexGroup(indexGroup, request.targetId, request.searchKey)))
-        case None =>
-          logger.info(s"Search: did not find local index group for key ${request.targetId}, looking for closer nodes")
-          getClosestBetterThan(request.targetId, localNodeInfo.id) match
-            case closest if closest.nonEmpty => request.createRedirect(localNodeInfo, closest.head)
-            case _                           => request.createAnswer(None)
+      request.createAnswer(localIndex.search(request.targetId, request.searchKey, now))
     }
 
-    override def handleStoreValue(request: StoreValueEvent[V, P]): Either[RedirectEvent, StoreValueAnswerEvent] = {
+    override def handleStoreValue(request: StoreValueEvent[V, P]): Either[ErrorEvent, StoreValueAnswerEvent] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       val localSuccess = putLocalValue(request.targetId, request.value)
       logger.info(s"Stored entry ${request.value} at id ${request.targetId} locally: $localSuccess")
-      getClosestBetterThan(request.targetId, localNodeInfo.id) match
-        case closest if closest.nonEmpty => request.createRedirect(localNodeInfo, closest.head)
-        case _                           => request.createAnswer(localSuccess)
+      request.createAnswer(localSuccess)
     }
   }
 
@@ -169,7 +142,7 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
 
   private def sendObserverUpdate(): Unit = {
     val nodes = (homeBucket +: buckets.to(LazyList)).flatMap(_.nodes.keys).map(x => PeerUpdate(x.toHex, "node"))
-    val values = (homeBucket +: buckets.to(LazyList)).flatMap(_.values.keys).map(x => PeerUpdate(x.toHex, "entry"))
+    val values = localIndex.getIds.map(x => PeerUpdate(x.toHex, "entry"))
     network.sendObserverUpdate(NodeInfoUpdate(localNodeInfo.id.toHex, nodes ++ values, contentUrl, localContentKeys))
   }
 
@@ -208,6 +181,46 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     def hasSpace: Boolean = !isFull
   }
 
+  override def ping(targetId: NodeId): Future[Boolean] = {
+    getLocalNode(targetId) match
+      case Some(node) =>
+        network
+          .send(node.address, RequestEvent.createPing(localNodeInfo, targetId, node))
+          .map(_.content)
+          .withTimeout(5.seconds, false)
+      case None => Future.successful(false)
+  }
+
+  private def storeOne(rootKey: PartialKey[V], entry: IndexEntry[V, P]): Future[Boolean] = {
+    val targetId = hashingAlgorithm.hash(rootKey)
+    logger.info(s"Determined hash for rootKey $rootKey -> ${targetId.toHex}")
+    (
+      for {
+        target <- findNode(targetId)
+        result <- network.send(target.address, RequestEvent.createStoreValue(localNodeInfo, targetId, target, entry))
+      } yield result.content
+    ) recover { case e: Exception =>
+      logger.error("Failed to execute storeOne", e)
+      false
+    }
+  }
+
+  override def store(entry: IndexEntry[V, P]): Future[Boolean] = {
+    val rootKeys = entry.getIndexKeysOption match
+      case Some(value) => value
+      case None        => return Future.successful(false)
+    Future
+      .sequence(
+        rootKeys.map { k => storeOne(k, entry) }.map { f =>
+          f.recover { case e: Exception =>
+            logger.error(s"Failed to store entry $entry", e)
+            false
+          }
+        },
+      )
+      .map(_.exists(identity)) // sent to at least one peer
+  }
+
   private def remoteCall[C, A <: AnswerEvent[V, P] { type Content <: C }, R <: RequestEvent[V, P] { type Answer <: A }](
       nextHopAddress: InetSocketAddress,
       originator: R,
@@ -236,48 +249,36 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
       }
   }
 
-  override def ping(targetId: NodeId): Future[Boolean] = {
-    getLocalNode(targetId) match
-      case Some(node) =>
-        network
-          .send(node.address, RequestEvent.createPing(localNodeInfo, targetId, node))
-          .map(_.content)
-          .withTimeout(5.seconds, false)
-      case None => Future.successful(false)
-  }
+  override def findNode(targetId: NodeId): Future[NodeInfo] = {
 
-  private def storeOne(rootKey: PartialKey[V], entry: IndexEntry[V, P]): Future[Boolean] = {
-    val targetId = hashingAlgorithm.hash(rootKey)
-    logger.info(s"Determined hash for rootKey $rootKey -> ${targetId.toHex}")
-    Future
-      .find(getClosest(targetId).map { case nextHopPeer @ NodeInfo(_, address) =>
-        remoteCall(address, RequestEvent.createStoreValue(localNodeInfo, targetId, nextHopPeer, entry)).recover { exception =>
-          logger.error(s"Failed to send remote store to $nextHopPeer", exception)
-          false
-        }
-      })(identity)
-      .map(_.getOrElse(false))
-  }
+    Future {
+      val workingQueue = new PriorityBlockingQueue[NodeId](concurrency * concurrency, DistanceOrdering(targetId))
+      val results = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, DistanceOrdering(targetId))
+      val futures = new LinkedBlockingDeque[Future[FindNodeAnswerEvent]]
+      getClosest(targetId).foreach { nodeId => network.send(nodeId.address, RequestEvent.createFindNode(localNodeInfo, targetId, nodeId)) }
 
-  override def store(entry: IndexEntry[V, P]): Future[Boolean] = {
-    val rootKeys = entry.getIndexKeysOption match
-      case Some(value) => value
-      case None        => return Future.successful(false)
-      
-      
-    Future
-      .sequence(
-        rootKeys.map { k => storeOne(k, entry) }.map { f =>
-          f.recover { case e: Exception =>
-            logger.error(s"Failed to store entry $entry", e)
-            false
+      while (!futures.isEmpty || !results.isEmpty) {
+        val it = futures.iterator()
+        while (it.hasNext) {
+          val nextFuture = it.next
+          if (nextFuture.isCompleted) {
+
+            it.remove()
           }
-        },
-      )
-      .map(_.exists(identity)) // sent to at least one peer
-  }
+        }
+      }
 
-  override def findNode(targetId: NodeId): Future[NodeInfo] = ???
+//    Future
+//      .find(getClosest(targetId).map { case nextHopPeer@NodeInfo(_, address) =>
+//        remoteCall(address, RequestEvent.createStoreValue(localNodeInfo, targetId, nextHopPeer, entry)).recover { exception =>
+//          logger.error(s"Failed to send remote store to $nextHopPeer", exception)
+//          false
+//        }
+//      })(identity)
+//      .map(_.getOrElse(false))
+      ???
+    }
+  }
 
   override def search(key: PartialKey[V]): Future[Set[IndexEntry[V, P]]] = {
     val rootKeys =
