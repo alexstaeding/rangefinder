@@ -1,11 +1,7 @@
 package io.github.alexstaeding.rangefinder.crdt
 
 import java.time.OffsetDateTime
-import scala.annotation.targetName
-import scala.collection.SortedMap
-import scala.collection.immutable.{HashMap, TreeMap}
-import scala.math.Ordering.Implicits.*
-import scala.reflect.ClassTag
+import scala.collection.immutable.{HashMap, SortedMap, TreeMap}
 
 type SortedGrowOnlyExpiryMultiMap[K, E] = SortedMap[K, GrowOnlyExpiryMap[E]]
 
@@ -24,20 +20,8 @@ object SortedGrowOnlyExpiryMultiMap {
     }
   }
 
-  given lattice[K: Ordering, E]: Lattice[SortedGrowOnlyExpiryMultiMap[K, E]] with {
-    override def merge(
-        left: SortedGrowOnlyExpiryMultiMap[K, E],
-        right: SortedGrowOnlyExpiryMultiMap[K, E],
-    ): SortedGrowOnlyExpiryMultiMap[K, E] = {
-      val now = OffsetDateTime.now()
-      TreeMap.from(
-        HashMap
-          .from(left.cleaned(now))
-          .merged(HashMap.from(right.cleaned(now))) { case ((key, leftItems), (_, rightItems)) =>
-            // conflict resolution function for multiple index items with the same key
-            key -> GrowOnlyExpiryMap.lattice.merge(leftItems, rightItems)
-          },
-      )
-    }
-  }
+  given lattice[K: Ordering, E]: Lattice[SortedGrowOnlyExpiryMultiMap[K, E]] =
+    Lattice
+      .mapLattice(using GrowOnlyExpiryMap.lattice)
+      .map(TreeMap.from)
 }

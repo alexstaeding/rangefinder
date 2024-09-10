@@ -32,3 +32,8 @@ object Lattice {
     override def merge(left: Set[A], right: Set[A]): Set[A] = left union right
   }
 }
+
+extension [V](lattice: Lattice[V]) {
+  def map[U <: V](f: V => U): Lattice[U] =
+    (left: U, right: U) => f(lattice.merge(left, right))
+}
