@@ -11,7 +11,7 @@ trait NetworkAdapter[V, P] {
   def send[A <: AnswerEvent[V, P], R <: RequestEvent[V, P] { type Answer <: A }](
       nextHop: InetSocketAddress,
       event: R,
-  ): Future[Either[RedirectEvent, A]]
+  ): Future[A]
 
   def sendObserverUpdate(update: NodeInfoUpdate): Unit
 }
@@ -27,14 +27,14 @@ object NetworkAdapter {
 }
 
 trait EventHandler[V, P] {
-  def handlePing(request: PingEvent): Either[RedirectEvent, PingAnswerEvent]
-  def handleFindNode(request: FindNodeEvent): Either[RedirectEvent, FindNodeAnswerEvent]
-  def handleSearch(request: SearchEvent[V, P]): Either[RedirectEvent, SearchAnswerEvent[V, P]]
-  def handleStoreValue(request: StoreValueEvent[V, P]): Either[RedirectEvent, StoreValueAnswerEvent]
+  def handlePing(request: PingEvent): PingAnswerEvent
+  def handleFindNode(request: FindNodeEvent): FindNodeAnswerEvent
+  def handleSearch(request: SearchEvent[V, P]): SearchAnswerEvent[V, P]
+  def handleStoreValue(request: StoreValueEvent[V, P]): StoreValueAnswerEvent
 }
 
 extension [V, P](eventHandler: EventHandler[V, P]) {
-  def processRequest(request: RequestEvent[V, P]): Try[RedirectOr[AnswerEvent[V, P]]] =
+  def processRequest(request: RequestEvent[V, P]): Try[AnswerEvent[V, P]] =
     Try {
       request match
         case pingEvent: PingEvent                   => eventHandler.handlePing(pingEvent)

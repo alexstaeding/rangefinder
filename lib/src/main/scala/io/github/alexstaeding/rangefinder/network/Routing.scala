@@ -14,9 +14,7 @@ trait Routing[V, P] {
 
   def search(key: PartialKey[V]): Future[Set[IndexEntry[V, P]]]
 
-  def putLocalNode(id: NodeId, nodeInfo: NodeInfo): Boolean = putLocal(id, Left(nodeInfo))
+  def putLocalNode(id: NodeId, nodeInfo: NodeInfo): Boolean
 
-  def putLocalValue(id: NodeId, entry: IndexEntry[V, P]): Boolean = putLocal(id, Right(entry))
-
-  def putLocal(id: NodeId, value: Either[NodeInfo, IndexEntry[V, P]]): Boolean
+  def putLocalValue(id: NodeId, entry: IndexEntry[V, P]): Boolean
 }

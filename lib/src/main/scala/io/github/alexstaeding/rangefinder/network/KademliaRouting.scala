@@ -2,7 +2,8 @@ package io.github.alexstaeding.rangefinder.network
 
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import io.github.alexstaeding.rangefinder.crdt.{GrowOnlyExpiryMap, SortedGrowOnlyExpiryMultiMap}
-import io.github.alexstaeding.rangefinder.meta.{PartialKey, PartialKeyMatcher, PartialKeyUniverse}
+import io.github.alexstaeding.rangefinder.future.withTimeout
+import io.github.alexstaeding.rangefinder.meta.{LocalIndex, PartialKey, PartialKeyMatcher, PartialKeyUniverse}
 import io.github.alexstaeding.rangefinder.network.IndexEntry.Funnel
 import io.github.alexstaeding.rangefinder.network.NodeId.DistanceOrdering
 import org.apache.logging.log4j.Logger
@@ -14,9 +15,10 @@ import java.util.concurrent.Executors
 import scala.annotation.tailrec
 import scala.collection.immutable.{ListMap, TreeMap}
 import scala.collection.mutable
+import scala.concurrent.duration.{Duration, DurationInt}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
 
-class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
+class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonValueCodec](
     private val networkFactory: NetworkAdapter.Factory,
     private val localNodeInfo: NodeInfo,
     private val observerAddress: Option[InetSocketAddress],
@@ -25,11 +27,8 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
     private val kMaxSize: Int = 20, // Size of K-Buckets
     private val concurrency: Int = 3, // Number of concurrent searches
 )(using
-    idSpace: NodeIdSpace,
     logger: Logger,
     universe: PartialKeyUniverse[V],
-    partialKeyMatcher: PartialKeyMatcher[V],
-    ordering: Ordering[V],
     hashingAlgorithm: HashingAlgorithm[V],
 ) extends Routing[V, P] {
 
@@ -42,6 +41,8 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
   /** The bucket for the zero distance
     */
   private val homeBucket: KBucket = new KBucket
+
+  private val localIndex = new LocalIndex
 
   private def verifyTargetPeer(targetPeer: NodeInfo): Unit = {
     if (targetPeer.id != localNodeInfo.id) {
@@ -74,68 +75,26 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
       .collect { case (key, _) if distanceLeadingZeros(key) == partitionIndex => key }
       .foreach { key => destination.put(key, source.remove(key).get) }
 
-  private def searchIndexGroup(indexGroup: IndexGroup, targetId: NodeId, searchKey: PartialKey[V]): Seq[IndexEntry[V, P]] = {
-    val localEntries = indexGroup.search(searchKey)
-    val funnelResults = funnelSearch(targetId, searchKey, localEntries.collect { case x: IndexEntry.Funnel[V] => x })
-    val localResults = localEntries.collect { case x: IndexEntry.Value[V, P] => x }
-
-    localResults ++ funnelResults
-  }
-
-  /** Performs a BFS on all provided funnels.
-    */
-  private def funnelSearch(targetId: NodeId, searchKey: PartialKey[V], funnels: Seq[IndexEntry.Funnel[V]]): Seq[IndexEntry[V, P]] = {
-
-    case class PathEntry(funnel: IndexEntry.Funnel[V], prev: Option[PathEntry])
-
-    val rootEntry = PathEntry(IndexEntry.Funnel(targetId, searchKey), None)
-    val queue = mutable.ArrayDeque.from(funnels.map { f => PathEntry(f, Some(rootEntry)) })
-    val results = new mutable.ArrayBuffer[IndexEntry[V, P]]
-
-    while (queue.nonEmpty) {
-      val current = queue.removeHead()
-      // check for cycles
-      if (
-        Seq
-          .unfold(current) { c => c.prev.map { p => (p, p) } }
-          .forall { p => p.funnel.targetId == current.funnel.targetId }
-      ) {
-        getLocalValue(current.funnel.targetId) match
-          // funnel to local index
-          case Some(indexGroup) =>
-            indexGroup.search(current.funnel.search).foreach {
-              case f: IndexEntry.Funnel[V]   => queue.addOne(PathEntry(f, Some(current)))
-              case v: IndexEntry.Value[V, P] => results.addOne(v)
-            }
-          // funnel to remote index
-          // additional search is not performed at this time.
-          // instead, aliases are sent in result set to the query initiator
-          case None => results.addOne(current.funnel)
-      }
-    }
-
-    results.toSeq
-  }
-
   private object KademliaEventHandler extends EventHandler[V, P] {
-    override def handlePing(request: PingEvent): Either[RedirectEvent, PingAnswerEvent] = {
+    override def handlePing(request: PingEvent): Either[ErrorEvent, PingAnswerEvent] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       if (request.targetId == localNodeInfo.id) {
         request.createAnswer(true)
       } else {
-        getLocalValue(request.targetId) match
-          case Some(_) => request.createAnswer(true)
-          case None =>
-            getLocalNode(request.targetId) match
-              case Some(nodeInfo) => request.createRedirect(localNodeInfo, nodeInfo)
-              case None =>
-                getClosestBetterThan(request.targetId, localNodeInfo.id) match
-                  case closest if closest.nonEmpty => request.createRedirect(localNodeInfo, closest.head)
-                  case _                           => request.createAnswer(false)
+        if (localIndex.ping(request.targetId)) {
+          request.createAnswer(true)
+        } else {
+          getLocalNode(request.targetId) match
+            case Some(nodeInfo) => request.createRedirect(localNodeInfo, nodeInfo)
+            case None =>
+              getClosestBetterThan(request.targetId, localNodeInfo.id) match
+                case closest if closest.nonEmpty => request.createRedirect(localNodeInfo, closest.head)
+                case _                           => request.createAnswer(false)
+        }
       }
     }
 
-    override def handleFindNode(request: FindNodeEvent): Either[RedirectEvent, FindNodeAnswerEvent] = {
+    override def handleFindNode(request: FindNodeEvent): Either[ErrorEvent, FindNodeAnswerEvent] = {
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
       if (request.targetId == localNodeInfo.id) {
         request.createAnswer(true)
@@ -149,12 +108,14 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
       }
     }
 
-    override def handleSearch(request: SearchEvent[V, P]): Either[RedirectEvent, SearchAnswerEvent[V, P]] = {
+    override def handleSearch(request: SearchEvent[V, P]): Either[ErrorEvent, SearchAnswerEvent[V, P]] = {
+      val now = OffsetDateTime.now
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
+      localIndex.search(request.targetId, request.searchKey, now)
       getLocalValue(request.targetId) match
         case Some(indexGroup) =>
           logger.info(s"Search: found local index group ${indexGroup.partialKey} for id ${request.targetId}")
-          request.createAnswer(Some(searchIndexGroup(indexGroup, request.targetId, request.search)))
+          request.createAnswer(Some(searchIndexGroup(indexGroup, request.targetId, request.searchKey)))
         case None =>
           logger.info(s"Search: did not find local index group for key ${request.targetId}, looking for closer nodes")
           getClosestBetterThan(request.targetId, localNodeInfo.id) match
@@ -187,32 +148,24 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
       } else {
         val newTail = new KBucket
         moveEntries(buckets.size, homeBucket.nodes, newTail.nodes)
-        moveEntries(buckets.size, homeBucket.values, newTail.values)
         buckets.addOne(newTail)
         ensureBucketSpace(index)
       }
     }
   }
 
-  override def putLocal(id: NodeId, localValue: Either[NodeInfo, IndexEntry[V, P]]): Boolean = {
-    val index = distanceLeadingZeros(id)
-    ensureBucketSpace(index) match {
+  override def putLocalNode(id: NodeId, nodeInfo: NodeInfo): Boolean = {
+    val indexNr = distanceLeadingZeros(id)
+    ensureBucketSpace(indexNr) match {
       case Some(bucket) =>
-        localValue match
-          case Right(entry) =>
-            entry.getIndexKeysOption.foreach { rootKeys =>
-              rootKeys.foreach { rootKey =>
-                bucket.ensureIndexGroup(id, rootKey) match
-                  case Some(indexGroup: IndexGroup) => indexGroup.put(entry)
-                  case None                         => logger.error(s"Full indexGroup $id")
-              }
-            }
-          case Left(nodeInfo) => bucket.nodes.put(id, nodeInfo)
+        bucket.nodes.put(id, nodeInfo)
         sendObserverUpdate()
         true
       case None => false
     }
   }
+
+  override def putLocalValue(id: NodeId, entry: IndexEntry[V, P]): Boolean = ???
 
   private def sendObserverUpdate(): Unit = {
     val nodes = (homeBucket +: buckets.to(LazyList)).flatMap(_.nodes.keys).map(x => PeerUpdate(x.toHex, "node"))
@@ -246,68 +199,13 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
   private def getClosestBetterThan(targetId: NodeId, than: NodeId): Seq[NodeInfo] =
     getClosest(targetId).filter(info => DistanceOrdering(targetId).compare(info.id, than) < 0)
 
-  private def getLocalValue(targetId: NodeId): Option[IndexGroup] = getKBucket(distanceLeadingZeros(targetId)).values.get(targetId)
-
   private def getLocalNode(targetId: NodeId): Option[NodeInfo] = getKBucket(distanceLeadingZeros(targetId)).nodes.get(targetId)
-
-  private case class IndexGroup(partialKey: PartialKey[V]) {
-    private var _values: SortedGrowOnlyExpiryMultiMap[V, IndexEntry.Value[V, P]] = new TreeMap
-    private var _funnels: GrowOnlyExpiryMap[IndexEntry.Funnel[V]] = new ListMap
-
-    def values: SortedGrowOnlyExpiryMultiMap[V, IndexEntry.Value[V, P]] = _values
-    def funnels: GrowOnlyExpiryMap[IndexEntry.Funnel[V]] = _funnels
-
-    private def searchValues(searchKey: PartialKey[V], now: OffsetDateTime): Seq[IndexEntry[V, P]] = {
-      values
-        .range(searchKey.startInclusive, searchKey.endExclusive)
-        .to(LazyList)
-        .flatMap { (_, m) => m }
-        .filter { (_, expiry) => expiry.isAfter(now) }
-        .map { (entry, _) => entry }
-        .toList
-    }
-
-    private def searchFunnels(searchKey: PartialKey[V], now: OffsetDateTime): Seq[IndexEntry[V, P]] = {
-      funnels
-        .to(LazyList)
-        .filter { (_, expiry) => expiry.isAfter(now) }
-        .map { (funnel, _) => funnel }
-        .filter { funnel => funnel.search.contains(searchKey) }
-        .toList
-    }
-
-    def search(searchKey: PartialKey[V]): Seq[IndexEntry[V, P]] = {
-      val now = OffsetDateTime.now()
-      searchValues(searchKey, now) ++ searchFunnels(searchKey, now)
-    }
-
-    private def putValue(value: IndexEntry.Value[V, P]): Unit = {
-      val one = SortedGrowOnlyExpiryMultiMap.ofOne(value.value, value)
-      _values = SortedGrowOnlyExpiryMultiMap.lattice.merge(_values, one)
-    }
-
-    private def putFunnel(funnel: IndexEntry.Funnel[V]): Unit = {
-      val one = GrowOnlyExpiryMap.ofOne(funnel)
-      _funnels = GrowOnlyExpiryMap.lattice.merge(_funnels, one)
-    }
-
-    def put(entry: IndexEntry[V, P]): Unit =
-      entry match
-        case f: IndexEntry.Funnel[V]   => putFunnel(f)
-        case v: IndexEntry.Value[V, P] => putValue(v)
-  }
 
   private class KBucket {
     val nodes: mutable.Map[NodeId, NodeInfo] = new mutable.HashMap[NodeId, NodeInfo]
-    val values: mutable.Map[NodeId, IndexGroup] = new mutable.HashMap[NodeId, IndexGroup]
-
-    def size: Int = nodes.size + values.size
+    def size: Int = nodes.size
     def isFull: Boolean = size >= kMaxSize
     def hasSpace: Boolean = !isFull
-
-    def ensureIndexGroup(id: NodeId, key: PartialKey[V]): Option[IndexGroup] = {
-      if (isFull) None else Some(values.getOrElseUpdate(id, IndexGroup(key)))
-    }
   }
 
   private def remoteCall[C, A <: AnswerEvent[V, P] { type Content <: C }, R <: RequestEvent[V, P] { type Answer <: A }](
@@ -339,20 +237,13 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
   }
 
   override def ping(targetId: NodeId): Future[Boolean] = {
-    getLocalValue(targetId) match
-      case Some(_) => Future.successful(true)
-      case _ =>
-        getLocalNode(targetId) match
-          case Some(node) => remoteCall(node.address, RequestEvent.createPing(localNodeInfo, targetId, node))
-          case _ =>
-            Future
-              .find(getClosest(targetId).map { case nextHopPeer @ NodeInfo(_, address) =>
-                remoteCall(address, RequestEvent.createPing(localNodeInfo, targetId, nextHopPeer)).recover { exception =>
-                  logger.error(s"Failed to send remote ping to $nextHopPeer", exception)
-                  false
-                }
-              })(identity)
-              .map(_.getOrElse(false))
+    getLocalNode(targetId) match
+      case Some(node) =>
+        network
+          .send(node.address, RequestEvent.createPing(localNodeInfo, targetId, node))
+          .map(_.content)
+          .withTimeout(5.seconds, false)
+      case None => Future.successful(false)
   }
 
   private def storeOne(rootKey: PartialKey[V], entry: IndexEntry[V, P]): Future[Boolean] = {
@@ -372,6 +263,8 @@ class KademliaRouting[V: JsonValueCodec, P: JsonValueCodec](
     val rootKeys = entry.getIndexKeysOption match
       case Some(value) => value
       case None        => return Future.successful(false)
+      
+      
     Future
       .sequence(
         rootKeys.map { k => storeOne(k, entry) }.map { f =>

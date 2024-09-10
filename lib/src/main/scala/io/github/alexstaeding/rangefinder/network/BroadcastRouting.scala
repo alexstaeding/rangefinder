@@ -80,7 +80,7 @@ class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
       request.createAnswer(
         Some(
           values
-            .range(request.search.startInclusive, request.search.endExclusive)
+            .range(request.searchKey.startInclusive, request.searchKey.endExclusive)
             .values
             .toSeq,
         ),
