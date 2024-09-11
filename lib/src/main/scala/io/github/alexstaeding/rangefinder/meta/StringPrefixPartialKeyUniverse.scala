@@ -1,7 +1,5 @@
 package io.github.alexstaeding.rangefinder.meta
 
-import scala.collection.mutable
-
 class StringPrefixPartialKeyUniverse(
     val upperBoundInclusive: Int = 2,
     val lowerBoundExclusive: Int = 3,
@@ -18,75 +16,9 @@ class StringPrefixPartialKeyUniverse(
     }.toSet
   }
 
-  // each level required to reach depth multiplies the number of root keys by that level's degree
-  //      // e.g. input = fo, depth = 4, delta = 2
-  //      // output = foaa, foab, ..., foza, ... fozz
-  //      def generateCombinations(prefix: Seq[Char], depth: Int): Set[PartialKey[String]] = {
-  //        if (depth == 0) {
-  //          Set(PartialKey.ofString(prefix.mkString))
-  //        } else {
-  //          ('a' to 'z').flatMap { bottom =>
-  //            generateCombinations(prefix :+ bottom, depth - 1)
-  //          }.toSet
-  //        }
-  //      }
-  //
-  //      (lowerBoundExclusive until upperBoundInclusive).flatMap { idx =>
-  //        if (idx - value.length <= maxSuccessorLevel) {
-  //          generateCombinations(value, idx)
-  //        } else {
-  //          Set.empty
-  //        }
-  //      }.toSet
 
   override def getIndexKeys(key: PartialKey[String]): Set[PartialKey[String]] = {
-    // assume key.startInclusive.length == key.endExclusive.length - 1
-    require(key.startInclusive.length == key.endExclusive.length - 1)
-
-    val sharedPrefix = key.getSharedPrefix
-
-    if (sharedPrefix.length + maxSuccessorDelta < upperBoundInclusive) {
-      return Set.empty
-    }
-
-    val restStart = key.startInclusive.substring(sharedPrefix.length)
-    val restEnd = key.endExclusive.substring(sharedPrefix.length)
-
-    val queue = new mutable.ArrayDeque[String]
-
-    (sharedPrefix.length to ((lowerBoundExclusive - 1) min key.startInclusive.length))
-      .take(maxSuccessorDelta)
-      .foreach { idx =>
-        (key.startInclusive.charAt(idx) to key.endExclusive.charAt(idx)).map { char =>
-
-
-        }
-      }
-
-    ???
-  }
-
-  def predecessors(key: PartialKey[String]): Set[PartialKey[String]] = {
-    // assume key.startInclusive.length == key.endExclusive.length - 1
-
-    val sharedPrefix = key.getSharedPrefix
-
-//    val normalized = PartialKey(key.startInclusive.slice(0, lowerBoundExclusive), key.endExclusive)
-    ???
-  }
-
-  def successors(key: PartialKey[String], levelsLeft: Int): Set[PartialKey[String]] = {
-    if (levelsLeft <= 0) {
-      return Set.empty
-    }
-
-    if (key.startInclusive == key.endExclusive.dropRight(1)) {} else {}
-
-    val sharedPrefix = key.getSharedPrefix
-
-    (key.startInclusive.charAt(sharedPrefix.length) to key.endExclusive.charAt(sharedPrefix.length)).flatMap { bottom =>
-      successors(PartialKey.ofString(sharedPrefix + bottom), levelsLeft - 1)
-    }.toSet
+    getIndexKeys(key.getSharedPrefix)
   }
 
   extension (key: PartialKey[String]) {
