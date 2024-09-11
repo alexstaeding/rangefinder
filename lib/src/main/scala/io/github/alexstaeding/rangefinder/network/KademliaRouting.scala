@@ -2,7 +2,7 @@ package io.github.alexstaeding.rangefinder.network
 
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import io.github.alexstaeding.rangefinder.crdt.{GrowOnlyExpiryMap, SortedGrowOnlyExpiryMultiMap}
-import io.github.alexstaeding.rangefinder.future.withTimeout
+import io.github.alexstaeding.rangefinder.future.{TimeoutHandler, withTimeout}
 import io.github.alexstaeding.rangefinder.meta.{LocalIndex, PartialKey, PartialKeyMatcher, PartialKeyUniverse}
 import io.github.alexstaeding.rangefinder.network.IndexEntry.Funnel
 import io.github.alexstaeding.rangefinder.network.NodeId.DistanceOrdering
@@ -252,21 +252,21 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
 
   override def findNode(targetId: NodeId): Future[NodeInfo] = {
 
+    val timeoutHandler = TimeoutHandler(5.seconds)
+
     Future {
       val workingQueue = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, DistanceOrdering(targetId).asNodeInfo)
       val results = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, DistanceOrdering(targetId).asNodeInfo)
       val futures = new LinkedBlockingDeque[Future[FindNodeAnswerEvent]]
 
-      def sendFutures(): Unit = {
-        getClosest(targetId).foreach { nodeId =>
-          network
-            .send(nodeId.address, RequestEvent.createFindNode(localNodeInfo, targetId, nodeId))
-            .map { (answer: FindNodeAnswerEvent) => answer.content.foreach(workingQueue.add) }
-            .recover { case e: Exception =>
-              logger.error(s"Failed to send findNode to $nodeId", e)
-              false
-            }
-        }
+      def sendFuture(targetNode: NodeInfo): Unit = {
+        network
+          .send(targetNode.address, RequestEvent.createFindNode(localNodeInfo, targetNode.id, targetNode))
+          .map { (answer: FindNodeAnswerEvent) => answer.content.foreach(workingQueue.add) }
+          .recover { case e: Throwable =>
+            logger.error(s"Failed to send findNode to $targetNode", e)
+            false
+          }
       }
 
       while (!futures.isEmpty || !results.isEmpty) {
@@ -274,7 +274,6 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
         while (it.hasNext) {
           val nextFuture = it.next
           if (nextFuture.isCompleted) {
-
             it.remove()
           }
         }
