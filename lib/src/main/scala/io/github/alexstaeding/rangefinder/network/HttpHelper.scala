@@ -59,12 +59,15 @@ object HttpHelper {
     exchange.close()
   }
 
-  private def serializeAnswer[V: JsonValueCodec, P: JsonValueCodec](answer: RedirectOr[AnswerEvent[V, P]])(using logger: Logger): String = {
+  private def serializeAnswer[V: JsonValueCodec, P: JsonValueCodec](
+      answer: Either[ErrorEvent, AnswerEvent[V, P]],
+  )(using logger: Logger): String = {
     logger.info(s"Serializing answer $answer")
     answer match
-      case Left(redirect) =>
+      case Left(error) =>
         // Ambiguous given instances for V and P codec
-        writeToString(redirect)(using AnswerEvent.codec(using summon[JsonValueCodec[V]], summon[JsonValueCodec[P]]))
+        logger.warn(s"Sending ErrorEvent ${error.content}")
+        writeToString(error)(using AnswerEvent.codec(using summon[JsonValueCodec[V]], summon[JsonValueCodec[P]]))
       case Right(answer) =>
         writeToString(answer)(using AnswerEvent.codec)
   }

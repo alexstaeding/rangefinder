@@ -12,6 +12,9 @@ object GrowOnlyExpiryMap {
   ): GrowOnlyExpiryMap[E] =
     Map(element -> expiration)
 
+  def cleaned[E](map: GrowOnlyExpiryMap[E], now: OffsetDateTime = OffsetDateTime.now()): GrowOnlyExpiryMap[E] =
+    map.filter { (_, t) => t.isAfter(now) }
+
   given lattice[E]: Lattice[GrowOnlyExpiryMap[E]] =
     Lattice.mapLattice(using (left: OffsetDateTime, right: OffsetDateTime) => left max right)
 }

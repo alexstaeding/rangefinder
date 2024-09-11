@@ -46,7 +46,7 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
   override def send[A <: AnswerEvent[V, P], R <: RequestEvent[V, P] { type Answer <: A }](
       nextHop: InetSocketAddress,
       event: R,
-  ): Future[Either[RedirectEvent, A]] = {
+  ): Future[Either[ErrorEvent, A]] = {
     logger.info(s"Sending message $event to $nextHop")
     val body = writeToString(event)(using RequestEvent.codec)
     val request = HttpHelper.sendJsonPost(nextHop, "/api/v1/message", body)
@@ -64,7 +64,7 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
         readFromString(response.body())(using AnswerEvent.codec(using summon[JsonValueCodec[V]], summon[JsonValueCodec[P]]))
       }
       .map { x =>
-        x.asInstanceOf[A].extractRedirect()
+        x.extractError()
       }
   }
 

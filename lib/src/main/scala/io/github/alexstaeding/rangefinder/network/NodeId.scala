@@ -40,6 +40,7 @@ object NodeId {
   case class DistanceOrdering(targetId: NodeId) extends Ordering[NodeId] {
     override def compare(x: NodeId, y: NodeId): Int = NaturalOrdering.compare(x.xor(targetId), y.xor(targetId))
   }
+
   case object NaturalOrdering extends Ordering[NodeId] {
     override def compare(x: NodeId, y: NodeId): Int = BigInt(x.bytes) compare BigInt(y.bytes)
   }
@@ -49,6 +50,10 @@ object NodeId {
       require(self.space == other.space, "Node IDs must be of the same length")
       NodeId(self.bytes.zip(other.bytes).map((x, y) => (x ^ y).toByte))(using self.space)
     }
+  }
+  
+  extension (ordering: Ordering[NodeId]) {
+    def asNodeInfo: Ordering[NodeInfo] = (x: NodeInfo, y: NodeInfo) => ordering.compare(x.id, y.id)
   }
 
   given keyCodec(using NodeIdSpace): JsonKeyCodec[NodeId] = new JsonKeyCodec[NodeId] {

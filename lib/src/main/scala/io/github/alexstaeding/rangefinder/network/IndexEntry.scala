@@ -8,7 +8,7 @@ import org.apache.logging.log4j.Logger
 sealed trait IndexEntry[+V, +P]
 
 object IndexEntry {
-  final case class Funnel[+V](targetId: NodeId, search: PartialKey[V]) extends IndexEntry[V, Nothing]
+  final case class Funnel[+V](targetId: NodeId, searchKey: PartialKey[V]) extends IndexEntry[V, Nothing]
 
   final case class Value[+V, +P](owner: NodeId, value: V, payload: P) extends IndexEntry[V, P]
 
