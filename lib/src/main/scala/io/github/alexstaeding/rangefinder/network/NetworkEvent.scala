@@ -186,7 +186,7 @@ case class StoreValueAnswerEvent(
     override val routingInfo: RoutingInfo,
     override val content: Boolean,
 ) extends AnswerEvent[Nothing, Nothing] {
-  override type Content = this.type
+  override type Content = Boolean
 }
 
 case class ErrorEvent(
@@ -196,4 +196,12 @@ case class ErrorEvent(
 ) extends AnswerEvent[Nothing, Nothing] {
   override type Content = String
   override val content: String = message
+}
+
+extension [V, P, A <: AnswerEvent[V, P]](answer: AnswerEvent[V, P]) {
+  def extractError(): Either[ErrorEvent, A] = {
+    answer match
+      case error: ErrorEvent => Left(error)
+      case answer            => Right(answer.asInstanceOf[A])
+  }
 }

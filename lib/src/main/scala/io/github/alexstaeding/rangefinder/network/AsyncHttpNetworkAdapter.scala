@@ -35,7 +35,7 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
 
   private def receiveAnswer[A <: AnswerEvent[V, P]](answer: A): Unit = {
     answerCache.get(answer.requestId) match
-      case Some(future) => future.asInstanceOf[AnswerFuture[A]].receive(answer.extractRedirect())
+      case Some(future) => future.asInstanceOf[AnswerFuture[A]].receive(answer.extractError())
       case None         => logger.error(s"Received answer for unknown request ${answer.requestId}")
   }
 
@@ -62,7 +62,7 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
   override def send[A <: AnswerEvent[V, P], R <: RequestEvent[V, P] { type Answer <: A }](
       nextHop: InetSocketAddress,
       event: R,
-  ): Future[Either[RedirectEvent, A]] = {
+  ): Future[Either[ErrorEvent, A]] = {
     logger.info(s"Sending message $event to $nextHop")
     val body = writeToString(event)(using RequestEvent.codec)
 
@@ -85,10 +85,10 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
 
   private class AnswerFuture[A <: AnswerEvent[V, P]](pipelineHandler: BroadcastPipelineHandler[A]) {
 
-    private val promise = Promise[RedirectOr[A]]()
+    private val promise = Promise[Either[ErrorEvent, A]]()
     private val writeLock = ReentrantLock()
     private var state = Option.empty[TerminateOrContinue[A]]
-    def receive(answer: RedirectOr[A]): Unit = {
+    def receive(answer: Either[ErrorEvent, A]): Unit = {
       writeLock.lock()
       try {
         state match
@@ -103,7 +103,7 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
       }
     }
 
-    def await(): Future[RedirectOr[A]] = promise.future
+    def await(): Future[Either[ErrorEvent, A]] = promise.future
   }
 
   override def sendObserverUpdate(update: NodeInfoUpdate): Unit =
@@ -111,13 +111,13 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
 }
 
 sealed trait TerminateOrContinue[A <: AnswerEvent[?, ?]] extends Product
-case class Terminate[A <: AnswerEvent[?, ?]](answer: RedirectOr[A]) extends TerminateOrContinue[A]
-case class Continue[A <: AnswerEvent[?, ?]](answer: RedirectOr[A]) extends TerminateOrContinue[A]
+case class Terminate[A <: AnswerEvent[?, ?]](answer: Either[ErrorEvent, A]) extends TerminateOrContinue[A]
+case class Continue[A <: AnswerEvent[?, ?]](answer: Either[ErrorEvent, A]) extends TerminateOrContinue[A]
 
 trait BroadcastPipelineHandler[A <: AnswerEvent[?, ?]] {
   val timeoutMillis: Int
-  def handleInit(answer: RedirectOr[A]): TerminateOrContinue[A]
-  def handle(existing: RedirectOr[A], next: RedirectOr[A]): TerminateOrContinue[A]
+  def handleInit(answer: Either[ErrorEvent, A]): TerminateOrContinue[A]
+  def handle(existing: Either[ErrorEvent, A], next: Either[ErrorEvent, A]): TerminateOrContinue[A]
 }
 
 trait BroadcastPipelines[V, P] {

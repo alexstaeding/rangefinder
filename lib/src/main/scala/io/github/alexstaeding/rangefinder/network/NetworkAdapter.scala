@@ -27,14 +27,14 @@ object NetworkAdapter {
 }
 
 trait EventHandler[V, P] {
-  def handlePing(request: PingEvent): PingAnswerEvent
-  def handleFindNode(request: FindNodeEvent): FindNodeAnswerEvent
-  def handleSearch(request: SearchEvent[V, P]): SearchAnswerEvent[V, P]
-  def handleStoreValue(request: StoreValueEvent[V, P]): StoreValueAnswerEvent
+  def handlePing(request: PingEvent): Either[ErrorEvent, PingAnswerEvent]
+  def handleFindNode(request: FindNodeEvent): Either[ErrorEvent, FindNodeAnswerEvent]
+  def handleSearch(request: SearchEvent[V, P]): Either[ErrorEvent, SearchAnswerEvent[V, P]]
+  def handleStoreValue(request: StoreValueEvent[V, P]): Either[ErrorEvent, StoreValueAnswerEvent]
 }
 
 extension [V, P](eventHandler: EventHandler[V, P]) {
-  def processRequest(request: RequestEvent[V, P]): Try[AnswerEvent[V, P]] =
+  def processRequest(request: RequestEvent[V, P]): Try[Either[ErrorEvent, AnswerEvent[V, P]]] =
     Try {
       request match
         case pingEvent: PingEvent                   => eventHandler.handlePing(pingEvent)
