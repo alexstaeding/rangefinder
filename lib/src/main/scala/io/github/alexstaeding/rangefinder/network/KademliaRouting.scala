@@ -2,7 +2,7 @@ package io.github.alexstaeding.rangefinder.network
 
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
 import io.github.alexstaeding.rangefinder.crdt.{GrowOnlyExpiryMap, SortedGrowOnlyExpiryMultiMap}
-import io.github.alexstaeding.rangefinder.future.{TimeoutHandler, withTimeout}
+import io.github.alexstaeding.rangefinder.future.{TimeoutHandler, withTimeout, withTimeoutAndDefault}
 import io.github.alexstaeding.rangefinder.meta.{LocalIndex, PartialKey, PartialKeyMatcher, PartialKeyUniverse}
 import io.github.alexstaeding.rangefinder.network.IndexEntry.Funnel
 import io.github.alexstaeding.rangefinder.network.NodeId.DistanceOrdering
@@ -11,12 +11,15 @@ import org.apache.logging.log4j.Logger
 import java.net.InetSocketAddress
 import java.time.OffsetDateTime
 import java.util
-import java.util.concurrent.{ConcurrentLinkedQueue, Executors, LinkedBlockingDeque, PriorityBlockingQueue}
+import java.util.concurrent.*
+import java.util.concurrent.atomic.AtomicReference
 import scala.annotation.tailrec
 import scala.collection.immutable.{ListMap, TreeMap}
 import scala.collection.mutable
 import scala.concurrent.duration.{Duration, DurationInt}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
+import scala.jdk.CollectionConverters.*
+import scala.math.Ordering.Implicits.infixOrderingOps
 import scala.util.{Failure, Success}
 
 class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonValueCodec](
@@ -96,7 +99,12 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     override def handleSearch(request: SearchEvent[V, P]): Either[ErrorEvent, SearchAnswerEvent[V, P]] = {
       val now = OffsetDateTime.now
       putLocalNode(request.sourceInfo.id, request.sourceInfo)
-      request.createAnswer(localIndex.search(request.targetId, request.searchKey, now))
+      request.createAnswer(
+        SearchAnswerContent(
+          getClosestBetterThan(request.targetId, localNodeInfo.id),
+          localIndex.search(request.targetId, request.searchKey, now),
+        ),
+      )
     }
 
     override def handleStoreValue(request: StoreValueEvent[V, P]): Either[ErrorEvent, StoreValueAnswerEvent] = {
@@ -187,8 +195,13 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
       case Some(node) =>
         network
           .send(node.address, RequestEvent.createPing(localNodeInfo, targetId, node))
-          .map(_.content)
-          .withTimeout(5.seconds, false)
+          .map {
+            case Left(error) =>
+              logger.error(s"Failed to ping $targetId: ${error.content}")
+              false
+            case Right(value) => value.content
+          }
+          .withTimeoutAndDefault(5.seconds, false)
       case None => Future.successful(false)
   }
 
@@ -199,7 +212,12 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
       for {
         target <- findNode(targetId)
         result <- network.send(target.address, RequestEvent.createStoreValue(localNodeInfo, targetId, target, entry))
-      } yield result.content
+
+      } yield result match
+        case Left(error) =>
+          logger.error(s"Failed to store entry $entry at $targetId: ${error.content}")
+          false
+        case Right(value) => value.content
     ) recover { case e: Exception =>
       logger.error("Failed to execute storeOne", e)
       false
@@ -222,72 +240,42 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
       .map(_.exists(identity)) // sent to at least one peer
   }
 
-  private def remoteCall[C, A <: AnswerEvent[V, P] { type Content <: C }, R <: RequestEvent[V, P] { type Answer <: A }](
-      nextHopAddress: InetSocketAddress,
-      originator: R,
-  ): Future[C] = {
-    logger.info(s"Sending RPC to $nextHopAddress with target ${originator.targetId}")
-    network
-      .send(nextHopAddress, originator)
-      .recoverWith { e =>
-        logger.error(s"Failed to send remote call to $nextHopAddress", e)
-        Future.failed(e)
-      }
-      .map { answer =>
-        logger.info(s"Received answer $answer for ${originator.targetId}")
-        val answerId = answer match
-          case Left(value)  => value.requestId
-          case Right(value) => value.requestId
-        if (answerId != originator.requestId)
-          throw IllegalStateException(s"Received answer for incorrect id $answerId instead of ${originator.targetId}")
-        answer
-      }
-      .flatMap {
-        case Left(RedirectEvent(requestId, _, closerTargetInfo)) =>
-          logger.info(s"Redirecting Request($requestId) to closer target: $closerTargetInfo")
-          remoteCall(closerTargetInfo.address, originator)
-        case Right(value) => Future.successful(value.content)
-      }
-  }
-
   override def findNode(targetId: NodeId): Future[NodeInfo] = {
+    implicit val ordering: Ordering[NodeInfo] = DistanceOrdering(targetId).asNodeInfo
+    val results = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, ordering)
+    val workingQueue = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, ordering)
 
-    val timeoutHandler = TimeoutHandler(5.seconds)
+    getClosest(targetId).foreach { node =>
+      results.add(node)
+      workingQueue.add(node)
+    }
+
+    def sendFuture(targetNode: NodeInfo): Unit = {
+      network
+        .send(targetNode.address, RequestEvent.createFindNode(localNodeInfo, targetNode.id, targetNode))
+        .map {
+          case Left(error) => logger.error(s"Failed to send findNode to $targetNode: ${error.content}")
+          case Right(answer: FindNodeAnswerEvent) =>
+            answer.content
+              .filter { _ < localNodeInfo }
+              .foreach { node =>
+                results.add(node)
+                workingQueue.add(node)
+              }
+        }
+        .withTimeout(5.seconds)
+        .recover { case e: Throwable =>
+          logger.error(s"Failed to receive findNode from $targetNode", e)
+        }
+    }
 
     Future {
-      val workingQueue = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, DistanceOrdering(targetId).asNodeInfo)
-      val results = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, DistanceOrdering(targetId).asNodeInfo)
-      val futures = new LinkedBlockingDeque[Future[FindNodeAnswerEvent]]
+      LazyList
+        .continually { Option(workingQueue.poll(5, TimeUnit.SECONDS)) }
+        .collect { case Some(value) => value }
+        .foreach { node => sendFuture(node) }
 
-      def sendFuture(targetNode: NodeInfo): Unit = {
-        network
-          .send(targetNode.address, RequestEvent.createFindNode(localNodeInfo, targetNode.id, targetNode))
-          .map { (answer: FindNodeAnswerEvent) => answer.content.foreach(workingQueue.add) }
-          .recover { case e: Throwable =>
-            logger.error(s"Failed to send findNode to $targetNode", e)
-            false
-          }
-      }
-
-      while (!futures.isEmpty || !results.isEmpty) {
-        val it = futures.iterator()
-        while (it.hasNext) {
-          val nextFuture = it.next
-          if (nextFuture.isCompleted) {
-            it.remove()
-          }
-        }
-      }
-
-//    Future
-//      .find(getClosest(targetId).map { case nextHopPeer@NodeInfo(_, address) =>
-//        remoteCall(address, RequestEvent.createStoreValue(localNodeInfo, targetId, nextHopPeer, entry)).recover { exception =>
-//          logger.error(s"Failed to send remote store to $nextHopPeer", exception)
-//          false
-//        }
-//      })(identity)
-//      .map(_.getOrElse(false))
-      ???
+      results.peek()
     }
   }
 
@@ -305,19 +293,37 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
 
   private def search(rootKey: PartialKey[V], searchKey: PartialKey[V]): Future[Seq[IndexEntry[V, P]]] = {
     val targetId = hashingAlgorithm.hash(rootKey)
-    getLocalValue(targetId) match
-      case Some(indexGroup) =>
-        logger.info(s"Found local index group ${indexGroup.partialKey}")
-        Future.successful(searchIndexGroup(indexGroup, targetId, searchKey))
-      case None =>
-        logger.info(s"Looking for remote index group")
-        Future
-          .find(getClosest(targetId).map { case nextHopPeer @ NodeInfo(_, address) =>
-            remoteCall(address, RequestEvent.createSearch(localNodeInfo, targetId, nextHopPeer, searchKey)).recover { exception =>
-              logger.error(s"Failed to send remote search $nextHopPeer", exception)
-              None
-            }
-          })(_.isDefined)
-          .map(_.flatten.getOrElse(Seq.empty))
+    implicit val ordering: Ordering[NodeInfo] = DistanceOrdering(targetId).asNodeInfo
+    val results = new LinkedBlockingDeque[IndexEntry[V, P]](concurrency * concurrency)
+    val workingQueue = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, ordering)
+    val closestNode = new AtomicReference[NodeInfo](localNodeInfo)
+
+    getClosest(targetId).foreach(workingQueue.add)
+
+    def sendFuture(targetNode: NodeInfo): Unit = {
+      network
+        .send(targetNode.address, RequestEvent.createSearch(localNodeInfo, targetNode.id, targetNode, searchKey))
+        .map {
+          case Left(error) => logger.error(s"Failed to send findNode to $targetNode: ${error.content}")
+          case Right(SearchAnswerEvent(_, _, content)) =>
+            content.closerNodes
+              .filter { node => node < closestNode.getAndAccumulate(node, ordering.max) }
+              .foreach(workingQueue.add)
+            content.results.foreach(results.add)
+        }
+        .withTimeout(5.seconds)
+        .recover { case e: Throwable =>
+          logger.error(s"Failed to receive findNode from $targetNode", e)
+        }
+    }
+
+    Future {
+      LazyList
+        .continually { Option(workingQueue.poll(5, TimeUnit.SECONDS)) }
+        .collect { case Some(value) => value }
+        .foreach { node => sendFuture(node) }
+
+      results.asScala.toSeq
+    }
   }
 }

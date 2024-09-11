@@ -11,7 +11,7 @@ trait NetworkAdapter[V, P] {
   def send[A <: AnswerEvent[V, P], R <: RequestEvent[V, P] { type Answer <: A }](
       nextHop: InetSocketAddress,
       event: R,
-  ): Future[A]
+  ): Future[Either[ErrorEvent, A]]
 
   def sendObserverUpdate(update: NodeInfoUpdate): Unit
 }

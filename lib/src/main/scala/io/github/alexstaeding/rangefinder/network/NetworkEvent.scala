@@ -135,7 +135,7 @@ case class SearchEvent[V, P](
   override type Answer = SearchAnswerEvent[V, P]
   override def forward(localNodeInfo: NodeInfo, nextHopPeer: NodeInfo): Option[SearchEvent[V, P]] =
     if (routingInfo.ttl <= 1) None else Some(copy(routingInfo = RoutingInfo(localNodeInfo, nextHopPeer, routingInfo.ttl - 1)))
-  def createAnswer(content: Seq[IndexEntry[V, P]]): Right[ErrorEvent, SearchAnswerEvent[V, P]] =
+  def createAnswer(content: SearchAnswerContent[V, P]): Right[ErrorEvent, SearchAnswerEvent[V, P]] =
     Right(SearchAnswerEvent(requestId, RoutingInfo(routingInfo.nextHopPeer, sourceInfo, 1), content))
 }
 
@@ -171,12 +171,14 @@ case class FindNodeAnswerEvent(
   override type Content = Seq[NodeInfo]
 }
 
+case class SearchAnswerContent[V, P](closerNodes: Seq[NodeInfo], results: Seq[IndexEntry[V, P]])
+
 case class SearchAnswerEvent[V, P](
     override val requestId: UUID,
     override val routingInfo: RoutingInfo,
-    override val content: Seq[IndexEntry[V, P]],
+    override val content: SearchAnswerContent[V, P],
 ) extends AnswerEvent[V, P] {
-  override type Content = Seq[IndexEntry[V, P]]
+  override type Content = SearchAnswerContent[V, P]
 }
 
 case class StoreValueAnswerEvent(

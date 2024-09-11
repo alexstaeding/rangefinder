@@ -6,37 +6,49 @@ import java.util.concurrent.locks.ReentrantLock
 import java.util.{Timer, TimerTask}
 import scala.concurrent.*
 import scala.concurrent.duration.Duration
+import scala.util.{Failure, Try}
 
 private val timer = new Timer(true)
 
-class TimeoutHandler(val duration: Duration) {
-  private val timeoutPromise = Promise[Nothing]()
+class TimeoutHandler[T](val duration: Duration) {
+  private val timeoutPromise = Promise[T]()
   private var currentTask: Option[TimerTask] = None
-  private val lock = ReentrantLock()
+  private val taskLock = ReentrantLock()
+
+  private val defaultResult = new AtomicReference[Try[T]]
 
   def bump(): Unit = {
-    lock.lock()
+    taskLock.lock()
     currentTask.foreach(_.cancel())
     val task = new TimerTask {
-      def run(): Unit = timeoutPromise.tryFailure(new TimeoutException(s"Future timed out after ${duration.toMillis}ms"))
+      def run(): Unit = timeoutPromise.complete(defaultResult.get())
     }
     timer.schedule(task, duration.toMillis)
     currentTask = Some(task)
-    lock.unlock()
+    taskLock.unlock()
   }
 
-  def withTimeout[T](future: Future[T])(using ec: ExecutionContext): Future[T] = {
+  def setDefaultResult(result: Try[T]): Unit = {
+    defaultResult.set(result)
+  }
+
+  def setDefaultTimeout(): Unit = {
+    defaultResult.set(Failure(new TimeoutException(s"Future timed out after ${duration.toMillis}ms")))
+  }
+
+  def withTimeout(future: Future[T])(using ec: ExecutionContext): Future[T] = {
     Future.firstCompletedOf(List(future, timeoutPromise.future))
   }
 }
 
 extension [T](future: Future[T])(using ec: ExecutionContext) {
-  private def withTimeout(duration: Duration): Future[T] = {
-    val handler = TimeoutHandler(duration)
+  def withTimeout(duration: Duration): Future[T] = {
+    val handler = TimeoutHandler[T](duration)
+    handler.setDefaultTimeout()
     handler.bump()
     handler.withTimeout(future)
   }
 
-  def withTimeout[U >: T](after: Duration, default: => U): Future[U] =
+  def withTimeoutAndDefault[U >: T](after: Duration, default: => U): Future[U] =
     withTimeout(after).recover { case _: TimeoutException => default }
 }
