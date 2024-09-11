@@ -17,6 +17,7 @@ import scala.collection.immutable.{ListMap, TreeMap}
 import scala.collection.mutable
 import scala.concurrent.duration.{Duration, DurationInt}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
+import scala.util.{Failure, Success}
 
 class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonValueCodec](
     private val networkFactory: NetworkAdapter.Factory,
@@ -252,10 +253,21 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
   override def findNode(targetId: NodeId): Future[NodeInfo] = {
 
     Future {
-      val workingQueue = new PriorityBlockingQueue[NodeId](concurrency * concurrency, DistanceOrdering(targetId))
-      val results = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, DistanceOrdering(targetId))
+      val workingQueue = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, DistanceOrdering(targetId).asNodeInfo)
+      val results = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, DistanceOrdering(targetId).asNodeInfo)
       val futures = new LinkedBlockingDeque[Future[FindNodeAnswerEvent]]
-      getClosest(targetId).foreach { nodeId => network.send(nodeId.address, RequestEvent.createFindNode(localNodeInfo, targetId, nodeId)) }
+
+      def sendFutures(): Unit = {
+        getClosest(targetId).foreach { nodeId =>
+          network
+            .send(nodeId.address, RequestEvent.createFindNode(localNodeInfo, targetId, nodeId))
+            .map { (answer: FindNodeAnswerEvent) => answer.content.foreach(workingQueue.add) }
+            .recover { case e: Exception =>
+              logger.error(s"Failed to send findNode to $nodeId", e)
+              false
+            }
+        }
+      }
 
       while (!futures.isEmpty || !results.isEmpty) {
         val it = futures.iterator()
