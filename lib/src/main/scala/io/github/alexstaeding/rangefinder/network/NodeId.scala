@@ -42,7 +42,7 @@ object NodeId {
   }
 
   case object NaturalOrdering extends Ordering[NodeId] {
-    override def compare(x: NodeId, y: NodeId): Int = BigInt(x.bytes) compare BigInt(y.bytes)
+    override def compare(x: NodeId, y: NodeId): Int = BigInt(1, x.bytes) compare BigInt(1, y.bytes)
   }
 
   extension (self: NodeId) {
