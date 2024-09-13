@@ -5,7 +5,7 @@ import io.github.alexstaeding.rangefinder.network.{IndexEntry, NodeId}
 
 import java.time.OffsetDateTime
 import java.util.concurrent.locks.ReentrantLock
-import scala.collection.immutable.{AbstractSeq, LinearSeq, ListMap, TreeMap}
+import scala.collection.immutable.{ListMap, TreeMap}
 import scala.collection.mutable
 class LocalIndex[V: Ordering: PartialKeyMatcher, P] {
   private val lock = ReentrantLock()
@@ -13,20 +13,26 @@ class LocalIndex[V: Ordering: PartialKeyMatcher, P] {
   private var funnels: Map[NodeId, GrowOnlyExpiryMap[IndexEntry.Funnel[V]]] = new ListMap
 
   private def searchValues(targetId: NodeId, searchKey: PartialKey[V], now: OffsetDateTime): Seq[IndexEntry[V, P]] = {
-    values(targetId)
-      .range(searchKey.startInclusive, searchKey.endExclusive)
-      .flatMap { (_, m) => m }
-      .filter { (_, expiry) => expiry.isAfter(now) }
-      .map { (entry, _) => entry }
-      .toList
+    values.get(targetId) match
+      case Some(value) =>
+        value
+          .range(searchKey.startInclusive, searchKey.endExclusive)
+          .flatMap { (_, m) => m }
+          .filter { (_, expiry) => expiry.isAfter(now) }
+          .map { (entry, _) => entry }
+          .toList
+      case None => Seq.empty
   }
 
   private def searchFunnels(targetId: NodeId, searchKey: PartialKey[V], now: OffsetDateTime): Seq[IndexEntry[V, P]] = {
-    funnels(targetId)
-      .filter { (_, expiry) => expiry.isAfter(now) }
-      .map { (funnel, _) => funnel }
-      .filter { funnel => funnel.searchKey.contains(searchKey) }
-      .toList
+    funnels.get(targetId) match
+      case Some(value) =>
+        value
+          .filter { (_, expiry) => expiry.isAfter(now) }
+          .map { (funnel, _) => funnel }
+          .filter { funnel => funnel.searchKey.contains(searchKey) }
+          .toList
+      case None => Seq.empty
   }
 
   def search(targetId: NodeId, searchKey: PartialKey[V], now: OffsetDateTime): Seq[IndexEntry[V, P]] = {
