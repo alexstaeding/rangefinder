@@ -46,7 +46,7 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     */
   private val homeBucket: KBucket = new KBucket
 
-  private val localIndex = new LocalIndex
+  private val localIndex = new LocalIndex[V, P]
 
   private def verifyTargetPeer(targetPeer: NodeInfo): Unit = {
     if (targetPeer.id != localNodeInfo.id) {
@@ -147,7 +147,11 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     }
   }
 
-  override def putLocalValue(id: NodeId, entry: IndexEntry[V, P]): Boolean = ???
+  override def putLocalValue(id: NodeId, entry: IndexEntry[V, P]): Boolean = {
+    localIndex.put(id, entry)
+    sendObserverUpdate()
+    true
+  }
 
   private def sendObserverUpdate(): Unit = {
     val nodes = (homeBucket +: buckets.to(LazyList)).flatMap(_.nodes.keys).map(x => PeerUpdate(x.toHex, "node"))
