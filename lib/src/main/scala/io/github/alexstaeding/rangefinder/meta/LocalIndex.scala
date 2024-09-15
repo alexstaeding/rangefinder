@@ -2,19 +2,22 @@ package io.github.alexstaeding.rangefinder.meta
 
 import io.github.alexstaeding.rangefinder.crdt.{GrowOnlyExpiryMap, SortedGrowOnlyExpiryMultiMap}
 import io.github.alexstaeding.rangefinder.network.{IndexEntry, NodeId}
+import org.apache.logging.log4j.Logger
 
 import java.time.OffsetDateTime
 import java.util.concurrent.locks.ReentrantLock
 import scala.collection.immutable.{ListMap, TreeMap}
 import scala.collection.mutable
-class LocalIndex[V: Ordering: PartialKeyMatcher, P] {
+class LocalIndex[V: Ordering: PartialKeyMatcher, P](using logger: Logger) {
   private val lock = ReentrantLock()
   private var values: Map[NodeId, SortedGrowOnlyExpiryMultiMap[V, IndexEntry.Value[V, P]]] = new ListMap
   private var funnels: Map[NodeId, GrowOnlyExpiryMap[IndexEntry.Funnel[V]]] = new ListMap
 
   private def searchValues(targetId: NodeId, searchKey: PartialKey[V], now: OffsetDateTime): Seq[IndexEntry[V, P]] = {
+    logger.info(s"Entering search for $searchKey with values ${values.keys}")
     values.get(targetId) match
       case Some(value) =>
+        logger.info(s"searchValues: $value with searchKey: $searchKey")
         value
           .range(searchKey.startInclusive, searchKey.endExclusive)
           .flatMap { (_, m) => m }
@@ -87,6 +90,7 @@ class LocalIndex[V: Ordering: PartialKeyMatcher, P] {
   }
 
   private def putValue(targetId: NodeId, value: IndexEntry.Value[V, P]): Unit = {
+    logger.info(s"Put value $targetId -> $value")
     val one = SortedGrowOnlyExpiryMultiMap.ofOne(value.value, value)
     lock.lock()
     values = values + (targetId -> SortedGrowOnlyExpiryMultiMap.lattice.merge(
@@ -97,6 +101,7 @@ class LocalIndex[V: Ordering: PartialKeyMatcher, P] {
   }
 
   private def putFunnel(targetId: NodeId, funnel: IndexEntry.Funnel[V]): Unit = {
+    logger.info(s"Put funnel $targetId -> $funnel")
     val one = GrowOnlyExpiryMap.ofOne(funnel)
     lock.lock()
     funnels = funnels + (targetId -> GrowOnlyExpiryMap.lattice.merge(

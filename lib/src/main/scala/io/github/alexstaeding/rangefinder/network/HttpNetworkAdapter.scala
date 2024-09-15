@@ -21,7 +21,7 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
 
   private val client = HttpClient.newHttpClient()
   private val server = HttpServer.create(bindAddress, 10)
-  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
+  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newWorkStealingPool())
 
   server.createContext(
     "/api/v1/message",
@@ -47,9 +47,9 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
       nextHop: InetSocketAddress,
       event: R,
   ): Future[Either[ErrorEvent, A]] = {
-    logger.info(s"Sending message $event to $nextHop")
     val body = writeToString(event)(using RequestEvent.codec)
     val request = HttpHelper.sendJsonPost(nextHop, "/api/v1/message", body)
+    logger.info(s"Sending message to $nextHop: $body")
 
     client
       .sendAsync(request, BodyHandlers.ofString())
@@ -59,9 +59,10 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
         Future.failed(e)
       }
       .map { response =>
-        logger.info("Received response: " + response)
+        val body = response.body()
+        logger.info(s"Response: $body")
         // Ambiguous given instances for V and P codec
-        readFromString(response.body())(using AnswerEvent.codec(using summon[JsonValueCodec[V]], summon[JsonValueCodec[P]]))
+        readFromString(body)(using AnswerEvent.codec(using summon[JsonValueCodec[V]], summon[JsonValueCodec[P]]))
       }
       .map { x =>
         x.extractError()

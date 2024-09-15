@@ -1,10 +1,8 @@
 package io.github.alexstaeding.rangefinder.network
 
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
-import io.github.alexstaeding.rangefinder.crdt.{GrowOnlyExpiryMap, SortedGrowOnlyExpiryMultiMap}
-import io.github.alexstaeding.rangefinder.future.{TimeoutHandler, withTimeout, withTimeoutAndDefault}
+import io.github.alexstaeding.rangefinder.future.{withTimeout, withTimeoutAndDefault}
 import io.github.alexstaeding.rangefinder.meta.{LocalIndex, PartialKey, PartialKeyMatcher, PartialKeyUniverse}
-import io.github.alexstaeding.rangefinder.network.IndexEntry.Funnel
 import io.github.alexstaeding.rangefinder.network.NodeId.DistanceOrdering
 import org.apache.logging.log4j.Logger
 
@@ -14,13 +12,11 @@ import java.util
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicReference
 import scala.annotation.tailrec
-import scala.collection.immutable.{ListMap, TreeMap}
 import scala.collection.mutable
-import scala.concurrent.duration.{Duration, DurationInt}
+import scala.concurrent.duration.DurationInt
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
 import scala.jdk.CollectionConverters.*
 import scala.math.Ordering.Implicits.infixOrderingOps
-import scala.util.{Failure, Success}
 
 class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonValueCodec](
     private val networkFactory: NetworkAdapter.Factory,
@@ -36,7 +32,7 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     hashingAlgorithm: HashingAlgorithm[V],
 ) extends Routing[V, P] {
 
-  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
+  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newWorkStealingPool())
 
   private val network = networkFactory.create(InetSocketAddress(localNodeInfo.address.getPort), observerAddress, KademliaEventHandler)
 
@@ -182,8 +178,14 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     result
   }
 
-  private def getClosestBetterThan(targetId: NodeId, than: NodeId): Seq[NodeInfo] =
-    getClosest(targetId).filter(info => DistanceOrdering(targetId).compare(info.id, than) < 0)
+  private def getClosestBetterThan(targetId: NodeId, than: NodeId): Seq[NodeInfo] = {
+    implicit val ordering: Ordering[NodeId] = DistanceOrdering(targetId)
+    getClosest(targetId).filter { node =>
+      val result = node.id < than
+      logger.info(s"Node ${node.id.toHex} < $than: $result with target ${targetId.toHex}")
+      result
+    }
+  }
 
   private def getLocalNode(targetId: NodeId): Option[NodeInfo] = getKBucket(distanceLeadingZeros(targetId)).nodes.get(targetId)
 
@@ -216,12 +218,13 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
       for {
         target <- findNode(targetId)
         result <- network.send(target.address, RequestEvent.createStoreValue(localNodeInfo, targetId, target, entry))
-
       } yield result match
         case Left(error) =>
           logger.error(s"Failed to store entry $entry at $targetId: ${error.content}")
           false
-        case Right(value) => value.content
+        case Right(answer) =>
+          logger.info(s"Stored entry $entry under rootKey $rootKey ($targetId) at ${answer.routingInfo.lastHopPeer}")
+          answer.content
     ) recover { case e: Exception =>
       logger.error("Failed to execute storeOne", e)
       false
@@ -248,6 +251,7 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     implicit val ordering: Ordering[NodeInfo] = DistanceOrdering(targetId).asNodeInfo
     val results = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, ordering)
     val workingQueue = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, ordering)
+    val closestNode = new AtomicReference[NodeInfo](localNodeInfo)
 
     getClosest(targetId).foreach { node =>
       results.add(node)
@@ -259,9 +263,9 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
         .send(targetNode.address, RequestEvent.createFindNode(localNodeInfo, targetNode.id, targetNode))
         .map {
           case Left(error) => logger.error(s"Failed to send findNode to $targetNode: ${error.content}")
-          case Right(answer: FindNodeAnswerEvent) =>
-            answer.content
-              .filter { _ < localNodeInfo }
+          case Right(FindNodeAnswerEvent(_, _, content)) =>
+            content
+              .filter { node => node != targetNode && node < closestNode.getAndAccumulate(node, ordering.min) }
               .foreach { node =>
                 results.add(node)
                 workingQueue.add(node)
@@ -273,13 +277,28 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
         }
     }
 
+    logger.info("Got here1")
     Future {
       LazyList
-        .continually { Option(workingQueue.poll(5, TimeUnit.SECONDS)) }
-        .collect { case Some(value) => value }
-        .foreach { node => sendFuture(node) }
+        .continually {
+          logger.info("Got here2")
+          Option(workingQueue.poll(5, TimeUnit.SECONDS))
+        }
+        .collect { case Some(value) =>
+          logger.info("Got here3")
+          value
+        }
+        .foreach { node =>
+          logger.info("Got here4")
+          sendFuture(node)
+          logger.info("Got here5")
+        }
 
+      logger.info("Got here6")
       results.peek()
+    } recover { case e: Throwable =>
+      logger.error("Failed to execute findNode", e)
+      localNodeInfo
     }
   }
 
@@ -297,6 +316,7 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
 
   private def search(rootKey: PartialKey[V], searchKey: PartialKey[V]): Future[Seq[IndexEntry[V, P]]] = {
     val targetId = hashingAlgorithm.hash(rootKey)
+    logger.info(s"Starting root key search: $rootKey for search $searchKey -> $targetId")
     implicit val ordering: Ordering[NodeInfo] = DistanceOrdering(targetId).asNodeInfo
     val results = new LinkedBlockingDeque[IndexEntry[V, P]](concurrency * concurrency)
     val workingQueue = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, ordering)
@@ -305,13 +325,21 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     getClosest(targetId).foreach(workingQueue.add)
 
     def sendFuture(targetNode: NodeInfo): Unit = {
+      logger.warn(s"Sending future to $targetNode, closer nodes to $targetId: ${closestNode.get()}")
       network
-        .send(targetNode.address, RequestEvent.createSearch(localNodeInfo, targetNode.id, targetNode, searchKey))
+        .send(targetNode.address, RequestEvent.createSearch(localNodeInfo, targetId, targetNode, searchKey))
         .map {
-          case Left(error) => logger.error(s"Failed to send findNode to $targetNode: ${error.content}")
+          case Left(error) => logger.error(s"Failed to send search to $targetNode: ${error.content}")
           case Right(SearchAnswerEvent(_, _, content)) =>
+            logger.warn(s"Received $targetNode: $content")
             content.closerNodes
-              .filter { node => node < closestNode.getAndAccumulate(node, ordering.max) }
+              .filter { node =>
+                val closestBefore = closestNode.get()
+                val result = node != targetNode && node < closestBefore
+                closestNode.getAndAccumulate(node, ordering.min)
+                logger.info(s"Node $node closer than $closestBefore (after: ${closestNode.get()}: $result")
+                result
+              }
               .foreach(workingQueue.add)
             content.results.foreach(results.add)
         }
@@ -325,7 +353,13 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
       LazyList
         .continually { Option(workingQueue.poll(5, TimeUnit.SECONDS)) }
         .collect { case Some(value) => value }
-        .foreach { node => sendFuture(node) }
+        .foreach { node =>
+          logger.info(s"Sending future to $node")
+          sendFuture(node)
+          logger.info(s"Results: $results, queue size: ${workingQueue.size()}")
+        }
+
+      logger.info("Finished search for root key: " + rootKey)
 
       results.asScala.toSeq
     }

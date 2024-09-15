@@ -22,16 +22,16 @@ object HttpHelper {
   }
 
   def sendObserverUpdate(client: HttpClient, observerAddress: InetSocketAddress, update: NodeInfoUpdate)(using logger: Logger): Unit = {
-    val serializedUpdate = writeToString(update)
-    logger.info(s"Sending observer update $serializedUpdate")
-    val request = HttpHelper.sendJsonPost(observerAddress, "/visualizer/api/node", serializedUpdate)
-
-    try {
-      client.send(request, BodyHandlers.ofString())
-    } catch {
-      case e: Exception =>
-        logger.error("Failed to send observer update", e)
-    }
+//    val serializedUpdate = writeToString(update)
+//    logger.info(s"Sending observer update $serializedUpdate")
+//    val request = HttpHelper.sendJsonPost(observerAddress, "/visualizer/api/node", serializedUpdate)
+//
+//    try {
+//      client.send(request, BodyHandlers.ofString())
+//    } catch {
+//      case e: Exception =>
+//        logger.error("Failed to send observer update", e)
+//    }
   }
 
   def receiveRequest[V: JsonValueCodec, P: JsonValueCodec](
