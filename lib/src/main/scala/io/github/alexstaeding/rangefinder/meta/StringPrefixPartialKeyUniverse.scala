@@ -3,11 +3,9 @@ package io.github.alexstaeding.rangefinder.meta
 class StringPrefixPartialKeyUniverse(
     val upperBoundInclusive: Int = 2,
     val lowerBoundExclusive: Int = 3,
-    val maxSuccessorDelta: Int = 2,
 ) extends PartialKeyUniverse[String] {
 
   require(upperBoundInclusive > 0)
-  require(maxSuccessorDelta > 0)
   require(lowerBoundExclusive > upperBoundInclusive)
 
   override def getIndexKeys(value: String): Set[PartialKey[String]] = {
@@ -15,7 +13,6 @@ class StringPrefixPartialKeyUniverse(
       PartialKey.ofString(value.substring(0, idx))
     }.toSet
   }
-
 
   override def getIndexKeys(key: PartialKey[String]): Set[PartialKey[String]] = {
     getIndexKeys(key.getSharedPrefix)
