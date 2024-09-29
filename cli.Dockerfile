@@ -9,4 +9,4 @@ FROM openjdk:21-bookworm
 
 COPY --from=builder /src/app/cli/target/scala-3.4.2/app-cli-assembly-0.1.0-SNAPSHOT.jar /src/cli.jar
 
-ENTRYPOINT ["/bin/bash", "-c", "while true; do echo 'Waiting for 30 seconds...'; sleep 30; done"]
+ENTRYPOINT ["/bin/bash", "-c", "while true; do echo 'Waiting for 15 seconds...'; sleep 15; done"]
