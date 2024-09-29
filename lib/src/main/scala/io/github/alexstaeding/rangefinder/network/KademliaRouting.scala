@@ -1,10 +1,8 @@
 package io.github.alexstaeding.rangefinder.network
 
 import com.github.plokhotnyuk.jsoniter_scala.core.JsonValueCodec
-import io.github.alexstaeding.rangefinder.crdt.{GrowOnlyExpiryMap, SortedGrowOnlyExpiryMultiMap}
-import io.github.alexstaeding.rangefinder.future.{TimeoutHandler, withTimeout, withTimeoutAndDefault}
+import io.github.alexstaeding.rangefinder.future.{withTimeout, withTimeoutAndDefault}
 import io.github.alexstaeding.rangefinder.meta.{LocalIndex, PartialKey, PartialKeyMatcher, PartialKeyUniverse}
-import io.github.alexstaeding.rangefinder.network.IndexEntry.Funnel
 import io.github.alexstaeding.rangefinder.network.NodeId.DistanceOrdering
 import org.apache.logging.log4j.Logger
 
@@ -14,13 +12,11 @@ import java.util
 import java.util.concurrent.*
 import java.util.concurrent.atomic.AtomicReference
 import scala.annotation.tailrec
-import scala.collection.immutable.{ListMap, TreeMap}
 import scala.collection.mutable
-import scala.concurrent.duration.{Duration, DurationInt}
+import scala.concurrent.duration.DurationInt
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
 import scala.jdk.CollectionConverters.*
 import scala.math.Ordering.Implicits.infixOrderingOps
-import scala.util.{Failure, Success}
 
 class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonValueCodec](
     private val networkFactory: NetworkAdapter.Factory,
@@ -281,10 +277,8 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     Future {
       LazyList
         .unfold(()) { _ => Option(workingQueue.poll(5, TimeUnit.SECONDS)).map(node => (node, ())) }
-        .foreach { node =>
-          sendFuture(node)
-        }
-      results.peek()
+        .foreach(sendFuture)
+      Option(results.peek()).getOrElse(localNodeInfo)
     } recover { case e: Throwable =>
       logger.error("Failed to execute findNode", e)
       localNodeInfo
@@ -333,9 +327,7 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     Future {
       LazyList
         .unfold(()) { _ => Option(workingQueue.poll(5, TimeUnit.SECONDS)).map(node => (node, ())) }
-        .foreach { node =>
-          sendFuture(node)
-        }
+        .foreach(sendFuture)
 
       results.asScala.toSeq
     }
