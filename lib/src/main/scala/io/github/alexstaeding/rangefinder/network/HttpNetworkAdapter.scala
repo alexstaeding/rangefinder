@@ -19,7 +19,7 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
 
   private val client = HttpClient.newHttpClient()
   private val server = HttpServer.create(bindAddress, 10000)
-  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newWorkStealingPool())
+  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 
   server.createContext(
     "/api/v1/message",
