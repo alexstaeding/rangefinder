@@ -71,14 +71,14 @@ def headlessMain(): Unit = {
     Some(content.keys.toSeq),
   )
 
-  existingNode.foreach { node => routing.putLocalNode(node.id, node) }
+  existingNode.foreach(routing.putLocalNode)
 
   Thread.sleep(5000)
 
   while (true) {
     val targetRandomId = NodeId.generateRandom()
-    logger.info(s"Sending out random ping to ${targetRandomId.toHex}")
-    routing.ping(targetRandomId)
+    logger.info(s"Sending out random find to ${targetRandomId.toHex}")
+    routing.findNode(targetRandomId)
 
     content.foreach((path, document) =>
       document

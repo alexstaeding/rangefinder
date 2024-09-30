@@ -40,7 +40,7 @@ class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
 
   override def searchWithPath(key: PartialKey[V]): Future[Set[(IndexEntry[V, P], NodePath)]] = ???
 
-  override def putLocalNode(id: NodeId, nodeInfo: NodeInfo): Boolean = ???
+  override def putLocalNode(node: NodeInfo): Boolean = ???
 
   override def putLocalValue(id: NodeId, entry: IndexEntry[V, P]): Boolean = ???
 

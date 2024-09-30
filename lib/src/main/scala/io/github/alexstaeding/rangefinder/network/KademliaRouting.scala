@@ -79,12 +79,12 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
 
   private object KademliaEventHandler extends EventHandler[V, P] {
     override def handlePing(request: PingEvent): Either[ErrorEvent, PingAnswerEvent] = {
-      putLocalNode(request.sourceInfo.id, request.sourceInfo)
+      putLocalNode(request.sourceInfo)
       request.createAnswer(request.targetId == localNodeInfo.id)
     }
 
     override def handleFindNode(request: FindNodeEvent): Either[ErrorEvent, FindNodeAnswerEvent] = {
-      putLocalNode(request.sourceInfo.id, request.sourceInfo)
+      putLocalNode(request.sourceInfo)
       val result = if (request.targetId == localNodeInfo.id) {
         request.createAnswer(Seq.empty)
       } else {
@@ -101,7 +101,7 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
 
     override def handleSearch(request: SearchEvent[V, P]): Either[ErrorEvent, SearchAnswerEvent[V, P]] = {
       val now = OffsetDateTime.now
-      putLocalNode(request.sourceInfo.id, request.sourceInfo)
+      putLocalNode(request.sourceInfo)
       request.createAnswer(
         SearchAnswerContent(
           getClosestBetterThan(request.targetId, localNodeInfo.id),
@@ -111,7 +111,7 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     }
 
     override def handleStoreValue(request: StoreValueEvent[V, P]): Either[ErrorEvent, StoreValueAnswerEvent] = {
-      putLocalNode(request.sourceInfo.id, request.sourceInfo)
+      putLocalNode(request.sourceInfo)
       val localSuccess = putLocalValue(request.targetId, request.value)
       request.createAnswer(localSuccess)
     }
@@ -138,11 +138,11 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     }
   }
 
-  override def putLocalNode(id: NodeId, nodeInfo: NodeInfo): Boolean = {
-    val indexNr = distanceLeadingZeros(id)
+  override def putLocalNode(node: NodeInfo): Boolean = {
+    val indexNr = distanceLeadingZeros(node.id)
     ensureBucketSpace(indexNr) match {
       case Some(bucket) =>
-        bucket.nodes.put(id, nodeInfo)
+        bucket.nodes.put(node.id, node)
         sendObserverUpdate()
         true
       case None => false
@@ -271,7 +271,7 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
         return Future.successful(value)
       case None => ()
 
-    def sendFuture(targetNode: NodeInfo): Unit = {
+    def sendFuture(targetNode: NodeInfo): Unit =
       network
         .send(targetNode.address, RequestEvent.createFindNode(localNodeInfo, targetId, targetNode))
         .map {
@@ -280,6 +280,7 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
             content
               .filter { node => node != targetNode && node < closestNode.getAndAccumulate(node, ordering.min) }
               .foreach { node =>
+                putLocalNode(targetNode)
                 results.add(node)
                 workingQueue.add(node)
               }
@@ -288,7 +289,6 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
         .recover { case e: Throwable =>
           logger.error(s"Failed to receive findNode to $targetId from $targetNode", e)
         }
-    }
 
     Future {
       LazyList

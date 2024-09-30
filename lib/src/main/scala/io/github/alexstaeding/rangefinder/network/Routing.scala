@@ -16,7 +16,7 @@ trait Routing[V, P] {
 
   def searchWithPath(key: PartialKey[V]): Future[Set[(IndexEntry[V, P], NodePath)]]
 
-  def putLocalNode(id: NodeId, nodeInfo: NodeInfo): Boolean
+  def putLocalNode(node: NodeInfo): Boolean
 
   def putLocalValue(id: NodeId, entry: IndexEntry[V, P]): Boolean
 }
