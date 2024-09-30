@@ -34,7 +34,7 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     hashingAlgorithm: HashingAlgorithm[V],
 ) extends Routing[V, P] {
 
-  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
+  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newWorkStealingPool(6))
 
   private val network = networkFactory.create(InetSocketAddress(localNodeInfo.address.getPort), observerAddress, KademliaEventHandler)
 
@@ -278,9 +278,12 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
           case Left(error) => logger.error(s"Failed to send findNode to $targetNode: ${error.content}")
           case Right(FindNodeAnswerEvent(_, _, content)) =>
             content
+              .map { node =>
+                putLocalNode(node)
+                node
+              }
               .filter { node => node != targetNode && node < closestNode.getAndAccumulate(node, ordering.min) }
               .foreach { node =>
-                putLocalNode(targetNode)
                 results.add(node)
                 workingQueue.add(node)
               }
@@ -323,7 +326,7 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
 
     val results = new LinkedBlockingDeque[(IndexEntry[V, P], NodePath)](concurrency * concurrency)
     val workingQueue = new PriorityBlockingQueue[NodePath](concurrency * concurrency, nodePathOrdering)
-    val closestNode = new AtomicReference[NodeInfo](localNodeInfo)
+    val closestNodeWithResults = new AtomicReference[NodeInfo](localNodeInfo)
 
     getClosest(targetId).map(NodePath(_, None)).foreach(workingQueue.add)
 
@@ -335,7 +338,18 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
           case Right(SearchAnswerEvent(_, _, content)) =>
             logger.warn(s"Received $targetNode: $content")
             content.closerNodes
-              .filter { node => node != targetNode && node < closestNode.getAndAccumulate(node, nodeOrdering.min) }
+              .map { node =>
+                putLocalNode(node)
+                node
+              }
+              .filter { node =>
+                node != targetNode &&
+                (if (content.results.nonEmpty) {
+                   node < closestNodeWithResults.getAndAccumulate(node, nodeOrdering.min)
+                 } else {
+                   node < closestNodeWithResults.get()
+                 })
+              }
               .map(NodePath(_, Some(targetNode)))
               .foreach(workingQueue.add)
             content.results.map((_, targetNode)).foreach(results.add)

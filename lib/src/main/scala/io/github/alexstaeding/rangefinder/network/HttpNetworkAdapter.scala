@@ -19,7 +19,7 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
 
   private val client = HttpClient.newHttpClient()
   private val server = HttpServer.create(bindAddress, 10000)
-  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
+  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newWorkStealingPool(4))
 
   server.createContext(
     "/api/v1/message",
@@ -50,7 +50,7 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
 
     Future {
       // random wait
-      Thread.sleep(Random.nextLong(2000))
+      Thread.sleep(Random.nextLong(1000))
     }.flatMap { _ =>
       HttpHelper
         .sendAsync(client, request, nextHop)

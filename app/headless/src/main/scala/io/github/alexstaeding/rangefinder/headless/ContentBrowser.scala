@@ -14,7 +14,7 @@ class ContentBrowser(
 
   private val server = HttpServer.create(InetSocketAddress(bindAddress.getPort), 10)
 
-  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(2))
+  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newWorkStealingPool(2))
 
   {
     server.createContext("/", (exchange: HttpExchange) => {

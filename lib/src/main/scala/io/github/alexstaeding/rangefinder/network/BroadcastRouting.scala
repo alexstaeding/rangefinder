@@ -26,7 +26,7 @@ class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
   private val values: mutable.SortedMap[V, IndexEntry.Value[V, P]] = new mutable.TreeMap
   private val funnels: mutable.Set[IndexEntry.Funnel[V]] = new mutable.LinkedHashSet
 
-  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
+  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newWorkStealingPool(4))
 
   private val network = networkFactory.create(InetSocketAddress(localNodeInfo.address.getPort), observerAddress, BroadcastEventHandler)
 

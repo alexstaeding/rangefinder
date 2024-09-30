@@ -25,7 +25,7 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
 
   private val client = HttpClient.newHttpClient()
   private val server = HttpServer.create(bindAddress, 1000)
-  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
+  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newWorkStealingPool(4))
 
   private val answerCache: mutable.Map[UUID, AnswerFuture[?]] = new mutable.HashMap
 

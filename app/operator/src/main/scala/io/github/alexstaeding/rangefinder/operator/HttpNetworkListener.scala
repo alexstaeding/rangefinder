@@ -11,7 +11,7 @@ private class HttpNetworkListener(
     private val bindAddress: InetSocketAddress,
     private val onReceive: EventReceiver,
 )(using logger: Logger) {
-  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
+  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newWorkStealingPool(4))
 
   private val server = HttpServer.create(bindAddress, 10)
 
