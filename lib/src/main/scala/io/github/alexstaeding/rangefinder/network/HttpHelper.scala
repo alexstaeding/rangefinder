@@ -23,7 +23,6 @@ object HttpHelper {
 
   def sendObserverUpdate(client: HttpClient, observerAddress: InetSocketAddress, update: NodeInfoUpdate)(using logger: Logger): Unit = {
     val serializedUpdate = writeToString(update)
-    logger.info(s"Sending observer update $serializedUpdate")
     val request = HttpHelper.sendJsonPost(observerAddress, "/visualizer/api/node", serializedUpdate)
 
     try {
@@ -52,8 +51,6 @@ object HttpHelper {
       }
       .get
 
-    logger.info(s"Received message $request and sending response $response")
-
     exchange.sendResponseHeaders(200, response.length)
     exchange.getResponseBody.write(response.getBytes)
     exchange.close()
@@ -62,7 +59,6 @@ object HttpHelper {
   private def serializeAnswer[V: JsonValueCodec, P: JsonValueCodec](
       answer: Either[ErrorEvent, AnswerEvent[V, P]],
   )(using logger: Logger): String = {
-    logger.info(s"Serializing answer $answer")
     answer match
       case Left(error) =>
         // Ambiguous given instances for V and P codec

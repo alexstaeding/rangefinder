@@ -12,7 +12,7 @@ case class NodeId(bytes: Array[Byte])(using val space: NodeIdSpace) {
     case _           => false
   }
   override def canEqual(that: Any): Boolean = that.isInstanceOf[NodeId]
-  override def toString: String = toHex.grouped(4).mkString(" ")
+  override def toString: String = toHex /*.grouped(4).mkString(" ")*/
   def toHex: String = bytes.map("%02x".format(_)).mkString
   def toInt: Int = BigInt(bytes).toInt
   def toLong: Long = BigInt(bytes).toLong
@@ -51,9 +51,9 @@ object NodeId {
       NodeId(self.bytes.zip(other.bytes).map((x, y) => (x ^ y).toByte))(using self.space)
     }
   }
-  
+
   extension (ordering: Ordering[NodeId]) {
-    def asNodeInfo: Ordering[NodeInfo] = (x: NodeInfo, y: NodeInfo) => ordering.compare(x.id, y.id)
+    def asNodeInfo: Ordering[NodeInfo] = Ordering.by { (x: NodeInfo) => x.id }(using ordering)
   }
 
   given keyCodec(using NodeIdSpace): JsonKeyCodec[NodeId] = new JsonKeyCodec[NodeId] {

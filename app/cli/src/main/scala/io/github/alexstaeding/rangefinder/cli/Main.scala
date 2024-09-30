@@ -21,7 +21,7 @@ def cliMain(clientNum: Int): Unit = {
 
   val host = Option(System.getenv("HOST")) match
     case Some(value) => value
-    case None => "localhost"
+    case None        => "localhost"
 
   val bindAddress = InetSocketAddress(host, 9000 + clientNum)
   val localNodeInfo = NodeInfo(localNodeId, bindAddress)
@@ -55,17 +55,28 @@ def cliMain(clientNum: Int): Unit = {
           .store(IndexEntry.Value(localNodeId, StringIndex(value), StringPayload("test")))
           .onComplete {
             case Success(value) =>
-              logger.info(s"Stored entry: $value")
+//              logger.info(s"Stored entry: $value")
             case Failure(exception) =>
               logger.error(s"Failed to store entry", exception)
           }(using ExecutionContext.parasitic)
       case s"search($search)" =>
         logger.info(s"Search for $search")
         routing
-          .search(PartialKey.ofString(search).map(StringIndex(_)))
+          .searchWithPath(PartialKey.ofString(search).map(StringIndex(_)))
           .onComplete {
-            case Success(value) =>
-              logger.info(s"Found entry: $value")
+            case Success(entries) =>
+              entries.foreach { case (entry, path) =>
+                logger.info(
+                  "Found via " + LazyList
+                    .unfold(Option(path)) {
+                      case Some(NodePath(node, prev)) => Some((node, prev))
+                      case None                       => None
+                    }
+                    .map(_.id)
+                    .mkString(" -> "),
+                )
+                logger.info(s"Result: $entry")
+              }
             case Failure(exception) =>
               logger.error(s"Failed to find entry", exception)
           }(using ExecutionContext.parasitic)

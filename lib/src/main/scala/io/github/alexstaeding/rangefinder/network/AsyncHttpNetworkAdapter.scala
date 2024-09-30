@@ -63,7 +63,6 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
       nextHop: InetSocketAddress,
       event: R,
   ): Future[Either[ErrorEvent, A]] = {
-    logger.info(s"Sending message $event to $nextHop")
     val body = writeToString(event)(using RequestEvent.codec)
 
     val future = AnswerFuture[A](pipelines.getPipeline(event))

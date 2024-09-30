@@ -7,6 +7,7 @@ import java.time.OffsetDateTime
 import java.util.concurrent.locks.ReentrantLock
 import scala.collection.immutable.{ListMap, TreeMap}
 import scala.collection.mutable
+
 class LocalIndex[V: Ordering: PartialKeyMatcher, P] {
   private val lock = ReentrantLock()
   private var values: Map[NodeId, SortedGrowOnlyExpiryMultiMap[V, IndexEntry.Value[V, P]]] = new ListMap
@@ -113,5 +114,4 @@ class LocalIndex[V: Ordering: PartialKeyMatcher, P] {
 
   def getIds: Seq[NodeId] =
     values.to(LazyList).filter(_._2.nonEmpty).map(_._1) ++ funnels.to(LazyList).filter(_._2.nonEmpty).map(_._1)
-
 }

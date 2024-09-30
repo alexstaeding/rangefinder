@@ -37,6 +37,11 @@ class TimeoutHandler[T](val duration: Duration) {
   }
 
   def withTimeout(future: Future[T])(using ec: ExecutionContext): Future[T] = {
+    future.onComplete { _ =>
+      taskLock.lock()
+      currentTask.foreach(_.cancel())
+      taskLock.unlock()
+    }
     Future.firstCompletedOf(List(future, timeoutPromise.future))
   }
 }

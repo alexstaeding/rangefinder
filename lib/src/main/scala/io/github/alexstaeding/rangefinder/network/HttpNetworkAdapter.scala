@@ -47,7 +47,6 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
       nextHop: InetSocketAddress,
       event: R,
   ): Future[Either[ErrorEvent, A]] = {
-    logger.info(s"Sending message $event to $nextHop")
     val body = writeToString(event)(using RequestEvent.codec)
     val request = HttpHelper.sendJsonPost(nextHop, "/api/v1/message", body)
 
@@ -59,7 +58,6 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
         Future.failed(e)
       }
       .map { response =>
-        logger.info("Received response: " + response)
         // Ambiguous given instances for V and P codec
         readFromString(response.body())(using AnswerEvent.codec(using summon[JsonValueCodec[V]], summon[JsonValueCodec[P]]))
       }

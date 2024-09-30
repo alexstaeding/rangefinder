@@ -22,7 +22,6 @@ class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
 )(using logger: Logger)
     extends Routing[V, P] {
 
-
   private val peers: mutable.Map[NodeId, NodeInfo] = new mutable.HashMap
   private val values: mutable.SortedMap[V, IndexEntry.Value[V, P]] = new mutable.TreeMap
   private val funnels: mutable.Set[IndexEntry.Funnel[V]] = new mutable.LinkedHashSet
@@ -38,11 +37,13 @@ class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
   override def findNode(targetId: NodeId): Future[NodeInfo] = ???
 
   override def search(key: PartialKey[V]): Future[Set[IndexEntry[V, P]]] = ???
-  
+
+  override def searchWithPath(key: PartialKey[V]): Future[Set[(IndexEntry[V, P], NodePath)]] = ???
+
   override def putLocalNode(id: NodeId, nodeInfo: NodeInfo): Boolean = ???
 
   override def putLocalValue(id: NodeId, entry: IndexEntry[V, P]): Boolean = ???
-  
+
   private object BroadcastEventHandler extends EventHandler[V, P] {
 
     private def broadcast(localNodeInfo: NodeInfo, lastHopPeer: NodeInfo, event: RequestEvent[V, P]): Unit = {
