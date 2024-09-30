@@ -17,6 +17,15 @@ spec:
       labels:
         app: operator
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: type
+                    operator: In
+                    values:
+                      - worker
       serviceAccountName: operator
       containers:
         - name: operator
