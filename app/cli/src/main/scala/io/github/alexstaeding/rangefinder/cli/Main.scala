@@ -23,7 +23,10 @@ def cliMain(clientNum: Int): Unit = {
     case Some(value) => value
     case None        => "localhost"
 
-  val bindAddress = InetSocketAddress(host, 9000 + clientNum)
+  val bindAddress = Option(System.getenv("P2P_PORT")).flatMap(_.toIntOption) match
+    case Some(port) => InetSocketAddress(host, port)
+    case None => InetSocketAddress(host, 9000 + clientNum)
+
   val localNodeInfo = NodeInfo(localNodeId, bindAddress)
 //  val observerAddress = Some(InetSocketAddress("localhost", 3000))
   val observerAddress = None
@@ -84,7 +87,7 @@ def cliMain(clientNum: Int): Unit = {
         NodeId.fromHex(id) match
           case Some(nodeId) =>
             logger.info(s"putLocalNode $nodeId")
-            routing.putLocalNode(nodeId, NodeInfo(nodeId, InetSocketAddress(host, port.toInt)))
+            routing.putLocalNode(NodeInfo(nodeId, InetSocketAddress(host, port.toInt)))
           case None =>
             logger.info(s"Invalid input, should be nodeId,host,port: '$line'")
       case _ =>
