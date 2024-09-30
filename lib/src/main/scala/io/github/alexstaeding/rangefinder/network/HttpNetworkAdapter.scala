@@ -5,12 +5,10 @@ import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
 import org.apache.logging.log4j.Logger
 
 import java.net.InetSocketAddress
-import java.net.http.HttpResponse.BodyHandlers
 import java.net.http.{HttpClient, HttpResponse}
 import java.util.concurrent.Executors
 import scala.concurrent.*
-import scala.jdk.FutureConverters.CompletionStageOps
-import scala.util.{Failure, Try}
+import scala.util.{Failure, Random, Try}
 
 class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
     private val bindAddress: InetSocketAddress,
@@ -20,7 +18,7 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
     extends NetworkAdapter[V, P] {
 
   private val client = HttpClient.newHttpClient()
-  private val server = HttpServer.create(bindAddress, 10)
+  private val server = HttpServer.create(bindAddress, 10000)
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newWorkStealingPool())
 
   server.createContext(
@@ -48,22 +46,22 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
       event: R,
   ): Future[Either[ErrorEvent, A]] = {
     val body = writeToString(event)(using RequestEvent.codec)
-    val request = HttpHelper.sendJsonPost(nextHop, "/api/v1/message", body)
+    val request = HttpHelper.buildPost(nextHop, "/api/v1/message", body)
 
-    client
-      .sendAsync(request, BodyHandlers.ofString())
-      .asScala
-      .recoverWith { e =>
-        logger.error(s"Failed to receive response from $nextHop", e)
-        Future.failed(e)
-      }
-      .map { response =>
-        // Ambiguous given instances for V and P codec
-        readFromString(response.body())(using AnswerEvent.codec(using summon[JsonValueCodec[V]], summon[JsonValueCodec[P]]))
-      }
-      .map { x =>
-        x.extractError()
-      }
+    Future {
+      // random wait
+      Thread.sleep(Random.nextLong(2000))
+    }.flatMap { _ =>
+      HttpHelper
+        .sendAsync(client, request, nextHop)
+        .map { response =>
+          // Ambiguous given instances for V and P codec
+          readFromString(response.body())(using AnswerEvent.codec(using summon[JsonValueCodec[V]], summon[JsonValueCodec[P]]))
+        }
+        .map { x =>
+          x.extractError()
+        }
+    }
   }
 
   override def sendObserverUpdate(update: NodeInfoUpdate): Unit =

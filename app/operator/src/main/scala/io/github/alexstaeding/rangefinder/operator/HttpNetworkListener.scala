@@ -1,8 +1,6 @@
 package io.github.alexstaeding.rangefinder.operator
 
-import com.github.plokhotnyuk.jsoniter_scala.core.readFromStream
 import com.sun.net.httpserver.{HttpExchange, HttpServer}
-import io.github.alexstaeding.rangefinder.network.{NodeId, NodeIdSpace}
 import org.apache.logging.log4j.Logger
 
 import java.net.InetSocketAddress
@@ -19,21 +17,21 @@ private class HttpNetworkListener(
 
   {
     server.createContext(
-      "/api/v1/add-node",
+      "/init",
       (exchange: HttpExchange) => {
-        val result = onReceive.receiveAddNode()
-        logger.info(s"Received add-node request and sending response $result")
-        exchange.sendResponseHeaders(if (result) 200 else 500, 0)
+        val result = onReceive.receiveInit().mkString("\n")
+        logger.info(s"Received init request and sending response\n$result")
+        exchange.getResponseBody.write(result.getBytes)
+        exchange.sendResponseHeaders(200, result.length)
         exchange.close()
       },
     )
 
     server.createContext(
-      "/api/v1/remove-node",
+      "/clean",
       (exchange: HttpExchange) => {
-        val id = readFromStream(exchange.getRequestBody)(using NodeId.valueCodec)
-        val result = onReceive.receiveRemoveNode(id)
-        logger.info(s"Received remove-node request for $id and sending response $result")
+        val result = onReceive.receiveClean()
+        logger.info(s"Received clean request and sending response $result")
         exchange.sendResponseHeaders(if (result) 200 else 500, 0)
         exchange.close()
       },

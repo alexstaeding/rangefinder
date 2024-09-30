@@ -13,6 +13,6 @@ trait NetworkListener {
 }
 
 trait EventReceiver {
-  def receiveAddNode(): Boolean
-  def receiveRemoveNode(id: NodeId): Boolean
+  def receiveInit(): Seq[String]
+  def receiveClean(): Boolean
 }

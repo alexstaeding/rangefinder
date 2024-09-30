@@ -46,9 +46,9 @@ public class OperatorActions {
     return NodeId.fromHex(service.getMetadata().getName().split("-")[1], nodeIdSpace);
   }
 
-  boolean createNode(NodeId id, Option<String> observerAddress) {
+  void createNode(NodeId id, String type, Option<String> observerAddress) {
 
-    var appName = "headless-" + id.toHex();
+    var appName = type + "-" + id.toHex();
 
     var deploySpec = new DeploymentBuilder()
       .withNewMetadata()
@@ -67,8 +67,13 @@ public class OperatorActions {
       .endMetadata()
       .withNewSpec()
       .addNewContainer()
-      .withName("headless")
-      .withImage("images.sourcegrade.org/rangefinder/headless:latest");
+      .withName(type)
+      .withImage("images.sourcegrade.org/rangefinder/" + type + ":latest");
+
+    ctr.addNewEnv()
+      .withName("HOST")
+      .withValue(appName)
+      .endEnv();
 
     ctr.addNewEnv()
       .withName("NODE_ID")
@@ -140,8 +145,6 @@ public class OperatorActions {
       .createOr(NonDeletingOperation::update);
 
     addIngressRule(appName, id);
-
-    return true;
   }
 
   private void addIngressRule(String appName, NodeId id) {
@@ -168,7 +171,19 @@ public class OperatorActions {
     logger.info("Added ingress rule for node {}", id.toHex());
   }
 
-  boolean removeNode(NodeId id) {
-    return true;
+  void clean() {
+    client
+      .apps()
+      .deployments()
+      .inNamespace(client.getNamespace())
+      .list()
+      .getItems()
+      .stream()
+      .filter(d -> d.getMetadata().getName().contains("headless") || d.getMetadata().getName().contains("cli"))
+      .forEach(d -> {
+        logger.info("Deleting deployment {}", d.getMetadata().getName());
+        client.apps().deployments().inNamespace(client.getNamespace()).withName(d.getMetadata().getName()).delete();
+        client.services().inNamespace(client.getNamespace()).withName(d.getMetadata().getName()).delete();
+      });
   }
 }

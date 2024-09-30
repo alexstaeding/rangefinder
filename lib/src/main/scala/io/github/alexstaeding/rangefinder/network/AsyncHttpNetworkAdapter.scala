@@ -4,18 +4,14 @@ import com.github.plokhotnyuk.jsoniter_scala.core.{JsonValueCodec, readFromStrea
 import com.sun.net.httpserver.{HttpExchange, HttpServer}
 import org.apache.logging.log4j.Logger
 
-import java.io.File
-import java.net.http.HttpClient.Version
-import java.net.http.HttpRequest.BodyPublishers
+import java.net.InetSocketAddress
 import java.net.http.HttpResponse.BodyHandlers
 import java.net.http.{HttpClient, HttpRequest}
-import java.net.{InetSocketAddress, URI}
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.locks.ReentrantLock
 import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future, Promise}
-import scala.io.Source
 import scala.jdk.FutureConverters.CompletionStageOps
 import scala.util.Try
 
@@ -28,8 +24,8 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
     extends NetworkAdapter[V, P] {
 
   private val client = HttpClient.newHttpClient()
-  private val server = HttpServer.create(bindAddress, 10)
-  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
+  private val server = HttpServer.create(bindAddress, 1000)
+  implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newWorkStealingPool())
 
   private val answerCache: mutable.Map[UUID, AnswerFuture[?]] = new mutable.HashMap
 
@@ -59,6 +55,9 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
     },
   )
 
+  server.setExecutor(ec)
+  server.start()
+
   override def send[A <: AnswerEvent[V, P], R <: RequestEvent[V, P] { type Answer <: A }](
       nextHop: InetSocketAddress,
       event: R,
@@ -69,17 +68,22 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
 
     answerCache.put(event.requestId, future)
 
-    val request = HttpHelper.sendJsonPost(nextHop, "/api/v1/async-request", body)
-
-    val response = client.send(request, BodyHandlers.ofString())
-    if (response.statusCode() == 200) {
-      logger.info(s"Successfully started waiting for answer for $event")
-      future.await()
-    } else {
-      logger.error(s"Failed to send message $event to $nextHop, removing answer future")
-      answerCache.remove(event.requestId)
-      Future.failed(new Exception(s"Failed to send message $event to $nextHop"))
-    }
+    val request = HttpHelper.buildPost(nextHop, "/api/v1/async-request", body)
+    HttpHelper
+      .sendAsync(client, request, nextHop)
+      .flatMap { response =>
+        if (response.statusCode() == 200) {
+          logger.debug(s"Successfully started waiting for answer for $event")
+          future.await().map { e =>
+            logger.debug(s"Received answer for $event: $e")
+            e
+          }
+        } else {
+          logger.error(s"Failed to send message $event to $nextHop, removing answer future")
+          answerCache.remove(event.requestId)
+          Future.failed(new Exception(s"Failed to send message $event to $nextHop"))
+        }
+      }
   }
 
   private class AnswerFuture[A <: AnswerEvent[V, P]](pipelineHandler: BroadcastPipelineHandler[A]) {
@@ -96,7 +100,10 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
               case Terminate(answer)      => promise.complete(Try(answer))
               case continue @ Continue(_) => state = Some(continue)
           case Some(_) => throw AssertionError("Future received answer after close ")
-          case None    => state = Some(pipelineHandler.handleInit(answer))
+          case None =>
+            pipelineHandler.handleInit(answer) match
+              case Terminate(answer)      => promise.complete(Try(answer))
+              case continue @ Continue(_) => state = Some(continue)
       } finally {
         writeLock.unlock()
       }
@@ -109,30 +116,11 @@ class AsyncHttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
     observerAddress.foreach(HttpHelper.sendObserverUpdate(client, _, update))
 }
 
-sealed trait TerminateOrContinue[A <: AnswerEvent[?, ?]] extends Product
-case class Terminate[A <: AnswerEvent[?, ?]](answer: Either[ErrorEvent, A]) extends TerminateOrContinue[A]
-case class Continue[A <: AnswerEvent[?, ?]](answer: Either[ErrorEvent, A]) extends TerminateOrContinue[A]
-
-trait BroadcastPipelineHandler[A <: AnswerEvent[?, ?]] {
-  val timeoutMillis: Int
-  def handleInit(answer: Either[ErrorEvent, A]): TerminateOrContinue[A]
-  def handle(existing: Either[ErrorEvent, A], next: Either[ErrorEvent, A]): TerminateOrContinue[A]
+object AsyncHttpNetworkAdapter extends NetworkAdapter.Factory {
+  override def create[V: JsonValueCodec, P: JsonValueCodec](
+      bindAddress: InetSocketAddress,
+      observerAddress: Option[InetSocketAddress],
+      onReceive: EventHandler[V, P],
+  )(using logger: Logger): NetworkAdapter[V, P] =
+    new AsyncHttpNetworkAdapter[V, P](bindAddress, observerAddress, onReceive, new BroadcastPipelines.TakeFirst)
 }
-
-trait BroadcastPipelines[V, P] {
-  val ping: BroadcastPipelineHandler[PingAnswerEvent]
-  val findNode: BroadcastPipelineHandler[FindNodeAnswerEvent]
-  val search: BroadcastPipelineHandler[SearchAnswerEvent[V, P]]
-  val storeValue: BroadcastPipelineHandler[StoreValueAnswerEvent]
-}
-
-extension [V, P](pipelines: BroadcastPipelines[V, P]) {
-  def getPipeline[A <: AnswerEvent[V, P], R <: RequestEvent[V, P] { type Answer <: A }](event: R): BroadcastPipelineHandler[A] =
-    event match
-      case _: PingEvent             => pipelines.ping.asInstanceOf[BroadcastPipelineHandler[A]]
-      case _: FindNodeEvent         => pipelines.findNode.asInstanceOf[BroadcastPipelineHandler[A]]
-      case _: SearchEvent[V, P]     => pipelines.search.asInstanceOf[BroadcastPipelineHandler[A]]
-      case _: StoreValueEvent[V, P] => pipelines.storeValue.asInstanceOf[BroadcastPipelineHandler[A]]
-}
-
-object BroadcastPipelineHandler {}

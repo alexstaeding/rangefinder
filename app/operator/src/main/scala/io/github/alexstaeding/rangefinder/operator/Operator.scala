@@ -22,25 +22,34 @@ class Operator(
   networkListener.register(
     bindAddress,
     new EventReceiver {
-      override def receiveAddNode(): Boolean =
-        try createNode()
+      override def receiveInit(): Seq[String] =
+        try init()
         catch
           case e: Exception =>
             logger.error("Failed to create node", e)
-            false
-      override def receiveRemoveNode(id: NodeId): Boolean =
-        try actions.removeNode(id)
+            Seq.empty
+      override def receiveClean(): Boolean =
+        try
+          actions.clean()
+          true
         catch
           case e: Exception =>
-            logger.error(s"Failed to remove node $id", e)
+            logger.error(s"Failed to remove nodes", e)
             false
     },
   )
 
-  private def createNode(): Boolean = {
+  private def init(): Seq[String] = {
+    ((1 to 20).map { _ => ("headless", createNode("headless")) } :+ ("cli", createNode("cli"))).map { (nodeType, nodeId) =>
+      s"${nodeId.toHex},$nodeType-${nodeId.toHex},9400"
+    }
+  }
+
+  private def createNode(nodeType: String): NodeId = {
     val nodeId = NodeId.generateRandom(random)
     val visualizerUrl = Option(System.getenv("VISUALIZER_URL"))
     logger.info(s"Creating node with id $nodeId and visualizer url $visualizerUrl")
-    actions.createNode(nodeId, visualizerUrl)
+    actions.createNode(nodeId, nodeType, visualizerUrl)
+    nodeId
   }
 }

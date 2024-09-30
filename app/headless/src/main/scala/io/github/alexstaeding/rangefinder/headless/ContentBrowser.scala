@@ -12,7 +12,7 @@ class ContentBrowser(
     private val content: Map[String, String],
 )(using logger: Logger) {
 
-  private val server = HttpServer.create(bindAddress, 10)
+  private val server = HttpServer.create(InetSocketAddress(bindAddress.getPort), 10)
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(2))
 

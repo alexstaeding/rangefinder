@@ -233,24 +233,26 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     val rootKeys = entry.getIndexKeysOption match
       case Some(value) => value
       case None        => return Future.successful(false)
+
     Future
       .sequence(
-        rootKeys.map { k => storeOne(k, entry) }.map { f =>
-          f.recover { case e: Exception =>
-            logger.error(s"Failed to store entry $entry", e)
-            false
-          }
-        },
+        rootKeys
+          .map { key => storeOne(key, entry) }
+          .map { future =>
+            future.recover { case e: Exception =>
+              logger.error(s"Failed to store entry $entry", e)
+              false
+            }
+          },
       )
       .map(_.exists(identity)) // sent to at least one peer
   }
 
   override def findNode(targetId: NodeId): Future[NodeInfo] = {
-    logger.debug("Finding node {}", targetId)
     implicit val ordering: Ordering[NodeInfo] = DistanceOrdering(targetId).asNodeInfo
-    val results = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, ordering)
-    val workingQueue = new PriorityBlockingQueue[NodeInfo](concurrency * concurrency, ordering)
-    val closestNode = new AtomicReference[NodeInfo](localNodeInfo)
+    val results = PriorityBlockingQueue[NodeInfo](concurrency * concurrency, ordering)
+    val workingQueue = PriorityBlockingQueue[NodeInfo](concurrency * concurrency, ordering)
+    val closestNode = AtomicReference[NodeInfo](localNodeInfo)
 
     val findLocal = boundary {
       getClosest(targetId).foreach { node =>
@@ -282,7 +284,7 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
                 workingQueue.add(node)
               }
         }
-        .withTimeout(5.seconds)
+        .withTimeout(10.seconds)
         .recover { case e: Throwable =>
           logger.error(s"Failed to receive findNode to $targetId from $targetNode", e)
         }

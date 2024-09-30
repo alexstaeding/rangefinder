@@ -7,15 +7,31 @@ import org.apache.logging.log4j.Logger
 import java.net.http.HttpClient.Version
 import java.net.http.HttpRequest.BodyPublishers
 import java.net.http.HttpResponse.BodyHandlers
-import java.net.http.{HttpClient, HttpRequest}
+import java.net.http.{HttpClient, HttpRequest, HttpResponse}
 import java.net.{InetSocketAddress, URI}
+import scala.concurrent.{ExecutionContext, Future}
+import scala.jdk.FutureConverters.CompletionStageOps
 
 object HttpHelper {
-  def sendJsonPost(address: InetSocketAddress, path: String, body: String): HttpRequest = {
+
+  def sendAsync(
+      client: HttpClient,
+      request: HttpRequest,
+      nextHop: InetSocketAddress,
+  )(using logger: Logger, ec: ExecutionContext): Future[HttpResponse[String]] = {
+    client
+      .sendAsync(request, BodyHandlers.ofString())
+      .asScala
+      .recoverWith { e =>
+        logger.error(s"Failed to receive response from $nextHop", e)
+        Future.failed(e)
+      }
+  }
+  def buildPost(address: InetSocketAddress, path: String, body: String): HttpRequest = {
     HttpRequest
       .newBuilder()
       .version(Version.HTTP_1_1)
-      .uri(URI.create(s"http://${address.getAddress.getHostAddress}:${address.getPort}/api/v1/message"))
+      .uri(URI.create(s"http://${address.getAddress.getHostAddress}:${address.getPort}$path"))
       .header("Content-Type", "application/json")
       .POST(BodyPublishers.ofString(body))
       .build()
@@ -23,7 +39,7 @@ object HttpHelper {
 
   def sendObserverUpdate(client: HttpClient, observerAddress: InetSocketAddress, update: NodeInfoUpdate)(using logger: Logger): Unit = {
     val serializedUpdate = writeToString(update)
-    val request = HttpHelper.sendJsonPost(observerAddress, "/visualizer/api/node", serializedUpdate)
+    val request = HttpHelper.buildPost(observerAddress, "/visualizer/api/node", serializedUpdate)
 
     try {
       client.send(request, BodyHandlers.ofString())
