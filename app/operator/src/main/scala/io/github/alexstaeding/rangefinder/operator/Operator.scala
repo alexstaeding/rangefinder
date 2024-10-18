@@ -40,7 +40,7 @@ class Operator(
   )
 
   private def init(): Seq[String] = {
-    ((1 to 100).map { _ => ("headless", createNode("headless")) } :+ ("cli", createNode("cli"))).map { (nodeType, nodeId) =>
+    ((1 to 32).map { _ => ("headless", createNode("headless")) } :+ ("cli", createNode("cli"))).map { (nodeType, nodeId) =>
       s"${nodeId.toHex},$nodeType-${nodeId.toHex},9400"
     }
   }
