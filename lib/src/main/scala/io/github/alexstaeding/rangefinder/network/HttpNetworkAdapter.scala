@@ -5,10 +5,11 @@ import com.sun.net.httpserver.{HttpExchange, HttpHandler, HttpServer}
 import org.apache.logging.log4j.Logger
 
 import java.net.InetSocketAddress
-import java.net.http.{HttpClient, HttpResponse}
+import java.net.http.HttpClient
 import java.util.concurrent.Executors
+import java.util.{Timer, TimerTask}
 import scala.concurrent.*
-import scala.util.{Failure, Random, Try}
+import scala.util.{Failure, Random, Success, Try}
 
 class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
     private val bindAddress: InetSocketAddress,
@@ -19,6 +20,7 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
 
   private val client = HttpClient.newHttpClient()
   private val server = HttpServer.create(bindAddress, 10000)
+  private val timer = Timer(true)
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newWorkStealingPool(4))
 
   server.createContext(
@@ -48,10 +50,9 @@ class HttpNetworkAdapter[V: JsonValueCodec, P: JsonValueCodec](
     val body = writeToString(event)(using RequestEvent.codec)
     val request = HttpHelper.buildPost(nextHop, "/api/v1/message", body)
 
-    Future {
-      // random wait
-      Thread.sleep(Random.nextLong(1000))
-    }.flatMap { _ =>
+    val promise = Promise[Unit]()
+    timer.schedule(new TimerTask { def run(): Unit = promise.complete(Success(())) }, Random.nextLong(1000))
+    promise.future.flatMap { _ =>
       HttpHelper
         .sendAsync(client, request, nextHop)
         .map { response =>
