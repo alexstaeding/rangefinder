@@ -3,7 +3,7 @@ import sbtassembly.AssemblyPlugin.autoImport.*
 
 ThisBuild / version := "0.1.0-SNAPSHOT"
 
-ThisBuild / scalaVersion := "3.4.2"
+ThisBuild / scalaVersion := "3.5.1"
 
 ThisBuild / assemblyMergeStrategy := {
   case PathList("META-INF", x @ _*) =>
@@ -20,10 +20,10 @@ lazy val lib = (project in file("lib"))
   .settings(
     name := "lib",
     libraryDependencies ++= Seq(
-      "org.apache.logging.log4j" % "log4j-core" % "2.23.1",
-      "org.apache.logging.log4j" % "log4j-slf4j2-impl" % "2.23.1",
-      "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core" % "2.30.9",
-      "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % "2.30.9",
+      "org.apache.logging.log4j" % "log4j-core" % "2.24.1",
+      "org.apache.logging.log4j" % "log4j-slf4j2-impl" % "2.24.1",
+      "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-core" % "2.31.0",
+      "com.github.plokhotnyuk.jsoniter-scala" %% "jsoniter-scala-macros" % "2.31.0",
       "org.scalatest" %% "scalatest" % "3.2.19" % Test,
       "org.scalatestplus" %% "scalacheck-1-18" % "3.2.19.0" % Test,
     ),
@@ -60,9 +60,8 @@ lazy val operator = (project in file("app/operator"))
     name := "app-operator",
     assembly / mainClass := Some("io.github.alexstaeding.rangefinder.operator.operatorMain"),
     libraryDependencies ++= Seq(
-      "io.fabric8" % "kubernetes-client" % "6.13.1",
-      "io.fabric8" % "crd-generator-apt" % "6.13.1" % "provided",
-      "org.apache.logging.log4j" % "log4j-core" % "2.23.1",
+      "io.fabric8" % "kubernetes-client" % "6.13.4",
+      "io.fabric8" % "crd-generator-apt" % "6.13.4" % "provided",
     ),
 //    javacOptions ++= Seq(
 //      "-processor",
