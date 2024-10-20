@@ -34,7 +34,7 @@ def cliMain(clientNum: Int): Unit = {
   logger.info(s"localInfo: ${localNodeId.toHex},${bindAddress.getHostString},${bindAddress.getPort}")
   logger.info("Type ping(id) to send a ping to a node")
   // start server threads
-  val routing = new KademliaRouting[StringIndex, StringPayload](HttpNetworkAdapter, localNodeInfo, observerAddress)
+  val router = new KademliaRouter[StringIndex, StringPayload](HttpNetworkAdapter, localNodeInfo, observerAddress)
   while (true) {
     val line = StdIn.readLine()
     line match {
@@ -42,7 +42,7 @@ def cliMain(clientNum: Int): Unit = {
         NodeId.fromHex(id) match
           case Some(nodeId) =>
             logger.info(s"Sending ping to $nodeId")
-            routing
+            router
               .ping(nodeId)
               .onComplete {
                 case Success(value) =>
@@ -54,7 +54,7 @@ def cliMain(clientNum: Int): Unit = {
             logger.info(s"Invalid node id: '$id'")
       case s"store($value)" =>
         logger.info(s"Storing entry: $value")
-        routing
+        router
           .store(IndexEntry.Value(localNodeId, StringIndex(value), StringPayload("test")))
           .onComplete {
             case Success(value) =>
@@ -64,7 +64,7 @@ def cliMain(clientNum: Int): Unit = {
           }(using ExecutionContext.parasitic)
       case s"search($search)" =>
         logger.info(s"Search for $search")
-        routing
+        router
           .searchWithPath(PartialKey.ofString(search).map(StringIndex(_)))
           .onComplete {
             case Success(entries) =>
@@ -87,7 +87,7 @@ def cliMain(clientNum: Int): Unit = {
         NodeId.fromHex(id) match
           case Some(nodeId) =>
             logger.info(s"putLocalNode $nodeId")
-            routing.putLocalNode(NodeInfo(nodeId, InetSocketAddress(host, port.toInt)))
+            router.putLocalNode(NodeInfo(nodeId, InetSocketAddress(host, port.toInt)))
           case None =>
             logger.info(s"Invalid input, should be nodeId,host,port: '$line'")
       case _ =>

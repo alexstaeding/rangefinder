@@ -13,14 +13,14 @@ import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
 import scala.math.Ordering.Implicits.infixOrderingOps
 import scala.util.{Failure, Success}
-class BroadcastRouting[V: JsonValueCodec: Ordering, P: JsonValueCodec](
+class BroadcastRouter[V: JsonValueCodec: Ordering, P: JsonValueCodec](
     private val networkFactory: NetworkAdapter.Factory,
     private val localNodeInfo: NodeInfo,
     private val observerAddress: Option[InetSocketAddress],
     private val contentUrl: Option[String] = None,
     private val localContentKeys: Option[Seq[String]] = None,
 )(using logger: Logger)
-    extends Routing[V, P] {
+    extends Router[V, P] {
 
   private val peers: mutable.Map[NodeId, NodeInfo] = new mutable.HashMap
   private val values: mutable.SortedMap[V, IndexEntry.Value[V, P]] = new mutable.TreeMap

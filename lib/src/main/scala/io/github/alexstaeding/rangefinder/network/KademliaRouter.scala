@@ -20,7 +20,7 @@ import scala.math.Ordering.Implicits.infixOrderingOps
 import scala.util.boundary
 import scala.util.boundary.break
 
-class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonValueCodec](
+class KademliaRouter[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonValueCodec](
     private val networkFactory: NetworkAdapter.Factory,
     private val localNodeInfo: NodeInfo,
     private val observerAddress: Option[InetSocketAddress],
@@ -32,7 +32,7 @@ class KademliaRouting[V: JsonValueCodec: Ordering: PartialKeyMatcher, P: JsonVal
     logger: Logger,
     universe: PartialKeyUniverse[V],
     hashingAlgorithm: HashingAlgorithm[V],
-) extends Routing[V, P] {
+) extends Router[V, P] {
 
   implicit val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newWorkStealingPool(6))
 

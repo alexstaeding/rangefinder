@@ -63,7 +63,7 @@ def headlessMain(): Unit = {
   val content = StringIndex.getContent(localNodeId)
   logger.info(s"Local content keys: ${content.keys.mkString(", ")}")
   val contentBrowser = new ContentBrowser(contentAddress, content)
-  val routing = new KademliaRouting[StringIndex, StringPayload](
+  val router = new KademliaRouter[StringIndex, StringPayload](
     HttpNetworkAdapter,
     localNodeInfo,
     observerAddress,
@@ -71,14 +71,14 @@ def headlessMain(): Unit = {
     Some(content.keys.toSeq),
   )
 
-  existingNode.foreach(routing.putLocalNode)
+  existingNode.foreach(router.putLocalNode)
 
   Thread.sleep(5000)
 
   while (true) {
     val targetRandomId = NodeId.generateRandom()
     logger.info(s"Sending out random find to ${targetRandomId.toHex}")
-    routing.findNode(targetRandomId)
+    router.findNode(targetRandomId)
 
     content.foreach((path, document) =>
       document
@@ -89,7 +89,7 @@ def headlessMain(): Unit = {
         .mapValues(_.length)
         .foreach { (word, frequency) =>
           if (word.length > 2) {
-            routing.store(IndexEntry.Value(localNodeId, StringIndex(word), StringPayload(path)))
+            router.store(IndexEntry.Value(localNodeId, StringIndex(word), StringPayload(path)))
           }
         },
     )

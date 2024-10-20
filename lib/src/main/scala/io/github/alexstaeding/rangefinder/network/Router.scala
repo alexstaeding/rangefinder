@@ -4,7 +4,7 @@ import io.github.alexstaeding.rangefinder.meta.PartialKey
 
 import scala.concurrent.Future
 
-trait Routing[V, P] {
+trait Router[V, P] {
 
   def ping(targetId: NodeId): Future[Boolean]
 
